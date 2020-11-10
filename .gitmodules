@@ -1,0 +1,12 @@
+[submodule "extlibs/stxxl"]
+	path = extlibs/stxxl
+	url = https://github.com/bingmann/stxxl.git
+[submodule "extlibs/foxxll"]
+	path = extlibs/foxxll
+	url = https://github.com/bingmann/foxxll.git
+[submodule "extlibs/tlx"]
+	path = extlibs/tlx
+	url = https://github.com/tlx/tlx.git
+[submodule "extlibs/googletest"]
+	path = extlibs/googletest
+	url = https://github.com/google/googletest.git
