@@ -1,0 +1,18 @@
+cache:
+  key: ${CI_COMMIT_REF_SLUG}
+
+variables:
+  GIT_SUBMODULE_STRATEGY: normal
+
+before_script:
+  - git submodule update --init --recursive
+
+debug-gcc:
+  image: gitlab.ae.cs.uni-frankfurt.de:5001/ae-ci/aeffm-gcc
+  stage: test
+  script:
+    - mkdir build; cd build
+    - cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=g++-8 -GNinja ..
+    - ninja run-fractal-tree
+    - echo "disk=,1Gi,memory" > .stxxl
+    - ./run-fractal-tree
