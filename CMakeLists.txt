@@ -19,3 +19,7 @@ add_subdirectory(extlibs/googletest)
 # executables
 add_executable(run-fractal-tree run-fractal-tree.cpp)
 target_link_libraries(run-fractal-tree ${STXXL_LIBRARIES})
+
+# executables
+add_executable(run-frage frage.cpp)
+target_link_libraries(run-frage ${STXXL_LIBRARIES})
