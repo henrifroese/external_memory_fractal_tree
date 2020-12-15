@@ -11,6 +11,7 @@
 #include <stxxl/comparator>
 #include "include/fractal_tree/fractal_tree.h"
 
+
 using key_type = int;
 using payload_type = double;
 using comp_type = stxxl::comparator<key_type>;

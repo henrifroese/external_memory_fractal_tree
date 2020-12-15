@@ -43,7 +43,7 @@ public:
         std::array<int,        max_num_values_in_node+1>     nodeIDs;
         std::array<value_type, max_num_buffer_items_in_node> buffer;
     };
-    using block_type = node_block;
+    using block_type = foxxll::typed_block<RawBlockSize, node_block>;
 
 
 private:
@@ -52,9 +52,22 @@ private:
     int m_num_buffer_items = 0;
     int m_num_values = 0;
     block_type* m_block = NULL;
+    bool m_changed = false;
 
 public:
     explicit node(int ID, bid_type BID) : m_id(ID), m_bid(BID) {};
+
+    bool was_changed() {
+        return m_changed;
+    }
+
+    block_type* get_block() {
+        return m_block;
+    }
+
+    void set_block(block_type*& block) {
+        m_block = block;
+    }
 };
 
 
@@ -77,7 +90,7 @@ class leaf final {
     struct leaf_block {
         std::array<std::pair<KeyType,DataType>, max_num_buffer_items_in_leaf> buffer;
     };
-    using block_type = leaf_block;
+    using block_type = foxxll::typed_block<RawBlockSize, leaf_block>;
 
 
 private:
@@ -85,9 +98,14 @@ private:
     const bid_type m_bid;
     int m_num_buffer_items = 0;
     block_type* m_block = NULL;
+    bool m_changed = false;
 
 public:
     explicit leaf(int ID, bid_type BID) : m_id(ID), m_bid(BID) {};
+
+    bool was_changed() {
+        return m_changed;
+    }
 };
 
 
