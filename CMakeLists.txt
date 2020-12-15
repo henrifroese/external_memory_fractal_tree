@@ -17,5 +17,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_subdirectory(extlibs/googletest)
 
 # executables
-add_executable(run-fractal-tree run-fractal-tree.cpp)
+add_executable(run-fractal-tree run-fractal-tree.cpp include/fractal_tree/fractal_tree_node_cache.h include/fractal_tree/fractal_tree_cache.h)
+add_executable(run-test run-test.cpp)
 target_link_libraries(run-fractal-tree ${STXXL_LIBRARIES})
+target_link_libraries(run-test ${STXXL_LIBRARIES})
+

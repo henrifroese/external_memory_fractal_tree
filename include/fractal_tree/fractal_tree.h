@@ -10,7 +10,9 @@
 
 #include <foxxll/mng/typed_block.hpp>
 #include "node.h"
+#include "fractal_tree_cache.h"
 #include <unordered_map>
+#include <unordered_set>
 
 namespace stxxl {
 
@@ -18,43 +20,64 @@ namespace fractal_tree {
 
 template <typename KeyType,
           typename DataType,
-          unsigned RawBlockSize,
-          typename AllocStrategy>
+          size_t RawBlockSize,
+          size_t RawMemoryPoolSize,
+          typename AllocStr
+         >
 class fractal_tree {
     // Type declarations.
     using key_type = KeyType;
     using data_type = DataType;
     using value_type = std::pair<const key_type, data_type>;
 
-    using self_type = fractal_tree<KeyType, DataType, RawBlockSize, AllocStrategy>;
+    using self_type = fractal_tree<KeyType, DataType, RawBlockSize, RawMemoryPoolSize, AllocStr>;
     using bid_type = foxxll::BID<RawBlockSize>;
 
+    // Nodes and Leaves declarations.
     using node_type = node<KeyType, DataType, RawBlockSize>;
     using leaf_type = leaf<KeyType, DataType, RawBlockSize>;
 
     using node_block_type = typename node_type::block_type;
     using leaf_block_type = typename leaf_type::block_type;
 
-private:
-    std::unordered_map<int, node_type> node_id_to_node;
-    std::unordered_map<int, leaf_type> node_id_to_leaf;
+    // Caches for nodes and leaves.
+    enum {
+        num_blocks_in_leaf_cache = (RawMemoryPoolSize / 2) / RawBlockSize,
+        num_blocks_in_node_cache = (RawMemoryPoolSize / 2) / RawBlockSize - 1 // -1 as root is always kept in cache
+    };
+    using node_cache_type = fractal_tree_cache<node_block_type, bid_type, num_blocks_in_node_cache>;
+    using leaf_cache_type = fractal_tree_cache<leaf_block_type, bid_type, num_blocks_in_leaf_cache>;
 
-    /*
-     * Next steps:
-     *  - cache like in pq implementation
-     *  - id counters in fractal tree for nodes and leafs
-     *  - idea: tree wants new node -> creates BID and ID and constructs node with those, registers node in hashmap -> writes to node -> writes to cache
-     *          (problem: need to read into a typed_block object, but only want to use element at 0. Should change pointer in node and leaf classes to
-     *                    correct typed_block and then in all functions only access the 0th element.)
-     */
+private:
+    std::unordered_map<int, node_type> m_node_id_to_node;
+    std::unordered_map<int, leaf_type> m_leaf_id_to_leaf;
+
+    int curr_node_id = 0;
+    int curr_leaf_id = 0;
+
+    std::unordered_set<bid_type> m_dirty_bids;
+
+    node_cache_type m_node_cache = node_cache_type(m_dirty_bids);
+    leaf_cache_type m_leaf_cache = leaf_cache_type(m_dirty_bids);
+
+    node_type m_root;
+
 public:
-    // TODO remove
-    fractal_tree() = default;
+    fractal_tree() : m_root(curr_node_id++, bid_type()) {
+        // Set up root.
+        m_root.set_block(new node_block_type);
+    };
 
     //! non-copyable: delete copy-constructor
     fractal_tree(const fractal_tree&) = delete;
     //! non-copyable: delete assignment operator
     fractal_tree& operator = (const fractal_tree&) = delete;
+
+    ~fractal_tree() {
+        delete m_node_cache;
+        delete m_leaf_cache;
+        delete m_root.get_block();
+    }
 
     // TODO should return std::pair<iterator, bool>, iterator and whether key was found while inserting
     void insert(const value_type& x)
@@ -72,12 +95,12 @@ public:
 }
 
 template <typename KeyType,
-          typename DataType,
-          typename KeyCompareWithMaxType,
-          unsigned RawBlockSize,
-          typename AllocStrategy
-          >
-using ftree = fractal_tree::fractal_tree<KeyType, DataType, KeyCompareWithMaxType, RawBlockSize, AllocStrategy>;
+        typename DataType,
+        size_t RawBlockSize,
+        size_t RawMemoryPoolSize,
+        typename AllocStr
+>
+using ftree = fractal_tree::fractal_tree<KeyType, DataType, RawBlockSize, RawMemoryPoolSize, AllocStr>;
 
 }
 
