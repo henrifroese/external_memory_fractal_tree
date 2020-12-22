@@ -134,17 +134,21 @@ private:
         load(right_child);
 
         // Move left half of values in root buffer to left child buffer,
-        // right halt to right child buffer.
+        // right half to right child buffer.
         // Then promote mid item to key in root,
         // set child ids, and clear the root's buffer.
 
-        // TODO Problem: how to move values to child buffers without copying? -> check how btree does it.
+        // TODO NOTE THE DIRTY WRITES
+        // TODO Move values to child buffers without copying?
         std::vector<value_type> values_for_left_child = m_root.get_left_half_buffer_items();
         std::vector<value_type> values_for_right_child = m_root.get_right_half_buffer_items();
+        value_type mid_value = m_root.get_mid_buffer_item();
 
-        // TODO implement those
         left_child.add_to_buffer(values_for_left_child);
         right_child.add_to_buffer(values_for_right_child);
+
+        m_root.add_to_values(mid_value, left_child.get_id(), right_child.get_id());
+        m_root.clear_buffer();
     }
 
     node_type& get_new_node() {
