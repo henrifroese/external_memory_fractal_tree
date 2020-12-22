@@ -176,8 +176,40 @@ public:
          * Pseudocode:
          * 1. insert value into values of node
          * 2. get index i where value was inserted
-         * 3. insert left child id and right child id at indexes i, i+1
+         * 3. move nodeIDs from i onwards one to the right
+         * 4. insert left child id in free space at index i
+         * 5. overwrite id at i+1 with right child id
          */
+        // 1.
+        // Binary search for position to insert
+        auto insert_position_it = std::lower_bound(
+                m_values->begin(),
+                m_values->begin() + m_num_values,
+                value.first,
+                [](const value_type& val1, const value_type& val2)->bool {return val1.first < val2.first;}
+        );
+        // Shift all values [position to insert, last position] one to the right
+        // to make space for the new value.
+        for (auto it = m_values->begin() + m_num_buffer_items; it != insert_position_it; it--) {
+            *it = *(it-1);
+        }
+        // Insert new value
+        *insert_position_it = value;
+
+        // 2.
+        int insert_position_index = std::distance(m_values->begin(), insert_position_it);
+        auto nodeID_insert_position_it = m_nodeIDs->begin() + insert_position_index;
+
+        // 3.
+        // Shift all nodeIDs [position to insert, last position] one to the right
+        for (auto it = m_nodeIDs->begin() + m_num_values + 1; it != nodeID_insert_position_it; it--) {
+            *it = *(it-1);
+        }
+        // 4. + 5.
+        *nodeID_insert_position_it = left_child_id;
+        *(nodeID_insert_position_it+1) = right_child_id;
+
+        m_num_values++;
     }
 
     // Find key in values array. Return type:
