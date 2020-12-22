@@ -17,6 +17,45 @@ namespace stxxl {
 namespace fractal_tree {
 
 
+// Free functions to use for nodes and leaves.
+
+// Merge sorted vectors, and take from new_values in case of duplicates
+template<typename value_type>
+std::vector<value_type> merge_into(const std::vector<value_type>& new_values, const std::vector<value_type>& current_values) {
+    std::vector<value_type> result;
+
+    auto it_new_values = new_values.begin();
+    auto it_current_values = current_values.begin();
+
+    while ((it_new_values != new_values.end()) && (it_current_values != current_values.end())) {
+        // Compare by key
+        if (it_new_values->first < it_current_values->first) {
+            result.push_back(*it_new_values);
+            it_new_values++;
+            continue;
+        }
+        if (it_new_values->first > it_current_values->first) {
+            result.push_back(*it_current_values);
+            it_current_values++;
+            continue;
+        }
+        // Equal keys -> take new value, discard value from buffer
+        result.push_back(*it_new_values);
+        it_new_values++;
+        it_current_values++;
+    }
+    // Insert remaining elements
+    if (it_new_values != new_values.end()) {
+        std::copy(it_new_values, new_values.end(), std::back_inserter(result));
+    }
+    if (it_current_values != current_values.end()) {
+        std::copy(it_current_values, current_values.end(), std::back_inserter(result));
+    }
+
+    return result;
+}
+
+
 template<typename KeyType,
      typename DataType,
      unsigned RawBlockSize>
@@ -103,6 +142,14 @@ public:
         return std::vector<value_type>(m_buffer->begin()+buffer_mid+1, m_buffer->end());
     }
 
+    value_type get_mid_buffer_item() const {
+        return m_buffer->at(buffer_mid);
+    }
+
+    void clear_buffer() {
+        m_num_buffer_items = 0;
+    }
+
     std::pair<data_type, bool> buffer_find(const key_type& key) const {
         // Binary search for key
         auto it = std::lower_bound(
@@ -119,6 +166,18 @@ public:
             return std::pair<data_type, bool>(it->second, false);
         else
             return std::pair<data_type, bool>(dummy_datum, false);
+    }
+
+
+    // Add value to the node's values, and add the corresponding children to
+    // the node's nodeIDs
+    void add_to_values(value_type value, int left_child_id, int right_child_id) {
+        /*
+         * Pseudocode:
+         * 1. insert value into values of node
+         * 2. get index i where value was inserted
+         * 3. insert left child id and right child id at indexes i, i+1
+         */
     }
 
     // Find key in values array. Return type:
@@ -169,6 +228,7 @@ bool operator != (const node<KeyType, DataType, RawBlockSize>& node1, const node
     return !(node1.get_id() == node2.get_id());
 }
 
+
 template<typename KeyType,
         typename DataType,
         unsigned RawBlockSize>
@@ -218,6 +278,19 @@ public:
 
     void add_to_buffer(std::vector<value_type>& values) {
 
+        bool is_sorted = std::is_sorted(values.begin(), values.end(),
+                                        [] (value_type val1, value_type val2)->bool { return val1.first < val2.first; });
+        assert(is_sorted);
+
+        std::vector<value_type> buffer_values = std::vector<value_type>(m_buffer->begin(), m_buffer->begin()+m_num_buffer_items);
+
+        // Merge, and take from values in case of duplicates
+        assert(values.size() + buffer_values.size() <= max_num_buffer_items_in_leaf);
+        std::vector<value_type> new_buffer_values = merge_into<value_type>(values, buffer_values);
+
+        // Replace buffer with new buffer values
+        std::copy(new_buffer_values.begin(), new_buffer_values.end(), m_buffer->begin());
+        m_num_buffer_items = new_buffer_values.size();
     }
 
     std::pair<data_type, bool> buffer_find(const key_type& key) const {

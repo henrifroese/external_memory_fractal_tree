@@ -14,34 +14,12 @@ struct leaf_block {
     std::array<int, 1024> buffer;
 };
 
-void y(leaf_block& l) {
-    l.buffer[0] = 1000000;
-}
-
-std::array<int, 2>& make_arr(std::array<int, 2>* & keeper) {
-    std::array<int, 2>* x = new std::array<int, 2>;
-    std::cout << x << std::endl;
-    keeper = x;
-    return *x;
-}
-
 int main () {
-
-    std::array<int, 2>* keeper;
-    std::array<int, 2>& arr = make_arr(keeper);
-    std::cout << keeper << std::endl;
-    arr[0] = 1000;
-    std::cout << (*keeper)[0] << std::endl;
-    std::cout << &arr << std::endl;
-
-    delete keeper;
 
     const unsigned int RawBlockSize = 4096;
     using bid_type = foxxll::BID<RawBlockSize>;
     using leaf_block_type = foxxll::typed_block<RawBlockSize, leaf_block>;
     using leaf_block_pool_type = foxxll::read_write_pool<leaf_block_type>;
-
-    using pager_type = stxxl::lru_pager<>;
 
     foxxll::block_manager* bm = foxxll::block_manager::get_instance();
 
