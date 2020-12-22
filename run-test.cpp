@@ -14,20 +14,28 @@ struct leaf_block {
     std::array<int, 1024> buffer;
 };
 
-/*
-// get new block from pool
+void y(leaf_block& l) {
+    l.buffer[0] = 1000000;
+}
 
-value_type                = std::pair<priority_type, key_type>;
-entries_block_type        = foxxll::typed_block<BlockSize, value_type, 0>;
-
-entries_block_type* m_entries_block = m_node_cache.get_entries_block();
-value_type* m_entries_elem = m_entries_block->begin();
-(*m_entries_elem) = val;
-
- entries ist leaf
- */
+std::array<int, 2>& make_arr(std::array<int, 2>* & keeper) {
+    std::array<int, 2>* x = new std::array<int, 2>;
+    std::cout << x << std::endl;
+    keeper = x;
+    return *x;
+}
 
 int main () {
+
+    std::array<int, 2>* keeper;
+    std::array<int, 2>& arr = make_arr(keeper);
+    std::cout << keeper << std::endl;
+    arr[0] = 1000;
+    std::cout << (*keeper)[0] << std::endl;
+    std::cout << &arr << std::endl;
+
+    delete keeper;
+
     const unsigned int RawBlockSize = 4096;
     using bid_type = foxxll::BID<RawBlockSize>;
     using leaf_block_type = foxxll::typed_block<RawBlockSize, leaf_block>;

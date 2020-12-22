@@ -52,12 +52,13 @@ public:
         if (m_dirty_bids.find(lru_bid) != m_dirty_bids.end())
             lru_block->write(lru_bid)->wait();
 
+        m_dirty_bids.erase(lru_bid);
         // Delete entry from cache.
         m_cache_map.erase(lru_bid);
         m_cache_list.pop_back();
     }
 
-    block_type* read(const bid_type& bid) {
+    block_type* load(const bid_type& bid) {
         auto it = m_cache_map.find(bid);
 
         // If not in cache ...
