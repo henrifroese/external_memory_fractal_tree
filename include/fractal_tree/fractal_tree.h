@@ -95,20 +95,31 @@ public:
             if (m_depth == 1)
                 split_singular_root();
             else
-                flush_buffer(m_root);
+                flush_buffer(m_root, 1);
         }
 
         assert(!m_root.buffer_full());
         m_root.insert_into_buffer(val);
     }
 
-    // TODO add const version (?)
-    // First value of return is DummyData if key is not found.
+    // First value of return is dummy if key is not found.
     std::pair<data_type, bool> find(const key_type& key) {
         return recursive_find(m_root, key, 1);
     }
 
 private:
+
+    node_type& get_new_node() {
+        node_type* new_node = new node_type(curr_node_id++, bid_type());
+        m_node_id_to_node.insert(std::pair<int, node_type>(new_node->get_id()), new_node);
+        return *new_node;
+    }
+
+    leaf_type& get_new_leaf() {
+        leaf_type* new_leaf = new leaf_type(curr_leaf_id++, bid_type());
+        m_leaf_id_to_leaf.insert(std::pair<int, node_type>(new_leaf->get_id()), new_leaf);
+        return *new_leaf;
+    }
 
     void load(node_type& node) {
         if (node != m_root) {
@@ -138,8 +149,9 @@ private:
         // Then promote mid item to key in root,
         // set child ids, and clear the root's buffer.
 
-        // TODO NOTE THE DIRTY WRITES
-        // TODO Move values to child buffers without copying?
+        m_dirty_bids.insert(left_child.get_bid());
+        m_dirty_bids.insert(right_child.get_bid());
+
         std::vector<value_type> values_for_left_child = m_root.get_left_half_buffer_items();
         std::vector<value_type> values_for_right_child = m_root.get_right_half_buffer_items();
         value_type mid_value = m_root.get_mid_buffer_item();
@@ -151,17 +163,10 @@ private:
         m_root.clear_buffer();
     }
 
-    node_type& get_new_node() {
-        node_type* new_node = new node_type(curr_node_id++, bid_type());
-        m_node_id_to_node.insert(std::pair<int, node_type>(new_node->get_id()), new_node);
-        return *new_node;
+    void flush_buffer(node_type& curr_node, int curr_depth) {
+        // TODO
     }
 
-    leaf_type& get_new_leaf() {
-        leaf_type* new_leaf = new leaf_type(curr_leaf_id++, bid_type());
-        m_leaf_id_to_leaf.insert(std::pair<int, node_type>(new_leaf->get_id()), new_leaf);
-        return *new_leaf;
-    }
 
     std::pair<data_type, bool> recursive_find(node_type& curr_node, const key_type& key, int curr_depth) {
         /*
