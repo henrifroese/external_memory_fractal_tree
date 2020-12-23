@@ -150,6 +150,66 @@ public:
         m_num_buffer_items = 0;
     }
 
+    // Add the new values to the buffer. In case of duplicate keys,
+    // take the data from new_values.
+    void add_to_buffer(std::vector<value_type>& new_values) {
+        /*
+         * When adding new values to the node's buffer, we might
+         * have duplicate keys in the new values and the current values,
+         * and duplicate keys in the new values and the current buffer items.
+         *
+         * Pseudocode:
+         * 1. Check for duplicate keys in new_values and current values.
+         *    Use the new data for all duplicates.
+         * 2. For the remaining new_values, merge them with the current
+         *    buffer items, and again use the new value for all duplicates.
+         */
+
+        bool is_sorted = std::is_sorted(new_values.begin(), new_values.end(),
+                                        [] (value_type val1, value_type val2)->bool { return val1.first < val2.first; });
+        assert(is_sorted);
+
+        // 1.
+        // Check for and replace duplicate keys in new_values and current values.
+        new_values = update_duplicate_values(new_values);
+
+        // 2.
+        std::vector<value_type> buffer_values = std::vector<value_type>(m_buffer->begin(), m_buffer->begin()+m_num_buffer_items);
+
+        // Merge, and take from values in case of duplicates
+        assert(new_values.size() + buffer_values.size() <= max_num_buffer_items_in_node);
+        std::vector<value_type> new_buffer_values = merge_into<value_type>(new_values, buffer_values);
+
+        // Replace buffer with new buffer values
+        std::copy(new_buffer_values.begin(), new_buffer_values.end(), m_buffer->begin());
+        m_num_buffer_items = new_buffer_values.size();
+    }
+
+    // Given new_values that should be inserted to the buffer, replace duplicate keys
+    // in values and new_values with the new data. Return the remaining non-duplicate
+    // values.
+    std::vector<value_type> update_duplicate_values(const std::vector<value_type>& new_values) {
+        std::vector<value_type> remaining_new_values;
+
+        auto it_new_values = new_values.begin();
+        auto it_current_values = m_values->begin();
+
+        while ((it_new_values != new_values.end()) && (it_current_values != m_values->end())) {
+            // Compare by key
+            if (it_new_values->first == it_current_values->first) {
+                // Duplicate found -> take data from new_values
+                it_current_values->second = it_new_values->second;
+                it_current_values++;
+                it_new_values++;
+            } else {
+                // No duplicate -> still want to insert the new value into the buffer
+                remaining_new_values.push_back(*it_current_values);
+            }
+        }
+
+        return remaining_new_values;
+    }
+
     std::pair<data_type, bool> buffer_find(const key_type& key) const {
         // Binary search for key
         auto it = std::lower_bound(
@@ -308,17 +368,19 @@ public:
         m_buffer = m_block->begin()->buffer;
     }
 
-    void add_to_buffer(std::vector<value_type>& values) {
+    // Add the new values to the buffer. In case of duplicate keys,
+    // take the data from new_values.
+    void add_to_buffer(std::vector<value_type>& new_values) {
 
-        bool is_sorted = std::is_sorted(values.begin(), values.end(),
+        bool is_sorted = std::is_sorted(new_values.begin(), new_values.end(),
                                         [] (value_type val1, value_type val2)->bool { return val1.first < val2.first; });
         assert(is_sorted);
 
         std::vector<value_type> buffer_values = std::vector<value_type>(m_buffer->begin(), m_buffer->begin()+m_num_buffer_items);
 
         // Merge, and take from values in case of duplicates
-        assert(values.size() + buffer_values.size() <= max_num_buffer_items_in_leaf);
-        std::vector<value_type> new_buffer_values = merge_into<value_type>(values, buffer_values);
+        assert(new_values.size() + buffer_values.size() <= max_num_buffer_items_in_leaf);
+        std::vector<value_type> new_buffer_values = merge_into<value_type>(new_values, buffer_values);
 
         // Replace buffer with new buffer values
         std::copy(new_buffer_values.begin(), new_buffer_values.end(), m_buffer->begin());
