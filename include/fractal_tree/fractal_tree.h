@@ -57,6 +57,7 @@ private:
     int curr_node_id = 0;
     int curr_leaf_id = 0;
 
+    // TODO give hash function (?)
     std::unordered_set<bid_type> m_dirty_bids;
 
     node_cache_type m_node_cache = node_cache_type(m_dirty_bids);
@@ -90,12 +91,35 @@ public:
 
     // Insert new key-datum pair into the tree
     void insert(const value_type& val) {
+        // TODO add explanation
+        /*
+         * We want to insert a new value into the tree.
+         * Usually, this just means inserting it into
+         * the root buffer.
+         *
+         * If the root buffer is full, we either
+         * want to (a) split the root up (if the root
+         * keys are at least half full) or (b) flush
+         * the root buffer down to the root's children.
+         *
+         * Doing (a) keeps the "small-split invariant"
+         * (see comments in flush_buffer for explanation)
+         * intact, as we prevent the case that the root
+         * overflows due to too many children splitting.
+         */
         if (m_root.buffer_full()) {
             // If we currently only have the root
             if (m_depth == 1)
                 split_singular_root();
-            else
-                flush_buffer(m_root, 1);
+            // Else: "normal" tree with not only root.
+            // Proceed to flush the root's buffer.
+            else {
+                // Potentially split to keep "small-split invariant"
+                if (m_root.values_at_least_half_full())
+                    split_root();
+                else
+                    flush_buffer(m_root, 1);
+            }
         }
 
         assert(!m_root.buffer_full());
@@ -135,10 +159,61 @@ private:
         leaf.set_block(cached_node_block);
     }
 
+    // Split up the root in cases where we do not only
+    // have the root (in that case: see split_singular_root).
+    void split_root() {
+        /*
+         * Pseudocode:
+         * 1. Create two new children nodes, left_child and right_child
+         * 2. Move left half of root values to left child values,
+         *    move right half of root values to right child values
+         * 3. Move root buffer items to appropriate children
+         * 4. Clear root buffer and values; promote mid item
+         *    to values; set child ids
+         *
+         * 1+2+3 are done sequentially for each child to minimize
+         * in-memory footprint.
+         */
+        // Gather buffer items / values / nodeIDs to distribute to the children
+        std::vector<value_type> values_for_left_child = m_root.get_left_half_values();
+        std::vector<value_type> values_for_right_child = m_root.get_right_half_values();
+        std::vector<int> nodeIDs_for_left_child = m_root.get_left_half_nodeIDs();
+        std::vector<int> nodeIDs_for_right_child = m_root.get_right_half_nodeIDs();
+
+        value_type mid_value = m_root.get_mid_value();
+        std::vector<value_type> buffer_items_for_left_child = m_root.get_left_buffer_items_for_split(mid_value);
+        std::vector<value_type> buffer_items_for_right_child = m_root.get_right_buffer_items_for_split(mid_value);
+
+        // Create new left child and populate it
+        node_type& left_child = get_new_node();
+        load(left_child);
+        m_dirty_bids.insert(left_child.get_bid());
+
+        left_child.set_buffer(buffer_items_for_left_child);
+        left_child.set_values(values_for_left_child, nodeIDs_for_left_child);
+
+        // Create new right child and populate it
+        node_type& right_child = get_new_node();
+        load(right_child);
+        m_dirty_bids.insert(right_child.get_bid());
+
+        right_child.set_buffer(buffer_items_for_right_child);
+        right_child.set_values(values_for_right_child, nodeIDs_for_right_child);
+
+        // Update root
+        m_root.clear_buffer();
+        m_root.clear_values();
+        m_root.add_to_values(mid_value, left_child.get_id(), right_child.get_id());
+    }
+
+    void split(node_type& parent_node, int id_of_node_to_split) {
+        // TODO
+    }
+
     // Only have root and its buffer is full, so we split it up.
     void split_singular_root() {
-        // Do what split_leaf will probably do similarly
 
+        // TODO do steps sequentially for children (as in split_root)
         leaf_type& left_child = get_new_leaf();
         leaf_type& right_child = get_new_leaf();
         load(left_child);
@@ -166,7 +241,6 @@ private:
     void flush_buffer(node_type& curr_node, int curr_depth) {
         // TODO
     }
-
 
     std::pair<data_type, bool> recursive_find(node_type& curr_node, const key_type& key, int curr_depth) {
         /*
@@ -241,7 +315,7 @@ template <typename KeyType,
         DataType DummyDatum,
         typename AllocStr
 >
-using ftree = fractal_tree::fractal_tree<KeyType, DataType, RawBlockSize, RawMemoryPoolSize, DummyDatum, AllocStr>;
+using ftree = fractal_tree::fractal_tree<KeyType, DataType, RawBlockSize, RawMemoryPoolSize, AllocStr>;
 
 }
 
