@@ -123,6 +123,11 @@ public:
         return m_num_buffer_items == max_num_buffer_items_in_node;
     }
 
+    // Check if number of keys in node is >= floor(b/2)
+    bool values_at_least_half_full() {
+        return m_num_values >= (max_num_values_in_node+1) / 2;
+    }
+
     block_type* get_block() {
         return m_block;
     }
@@ -148,6 +153,11 @@ public:
 
     void clear_buffer() {
         m_num_buffer_items = 0;
+    }
+
+    void set_buffer(std::vector<value_type>& values) {
+        std::copy(values.begin(), values.last(), m_buffer->begin());
+        m_num_buffer_items = values.size();
     }
 
     // Add the new values to the buffer. In case of duplicate keys,
@@ -228,6 +238,15 @@ public:
             return std::pair<data_type, bool>(dummy_datum, false);
     }
 
+    void clear_values() {
+        m_num_values = 0;
+    }
+
+    void set_values(std::vector<value_type>& values, std::vector<int>& nodeIDs) {
+        std::copy(values.begin(), values.last(), m_values->begin());
+        std::copy(nodeIDs.begin(), nodeIDs.end(), m_nodeIDs->begin());
+        m_num_values = values.size();
+    }
 
     // Add value to the node's values, and add the corresponding children to
     // the node's nodeIDs
