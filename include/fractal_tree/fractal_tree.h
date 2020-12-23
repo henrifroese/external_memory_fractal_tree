@@ -91,7 +91,6 @@ public:
 
     // Insert new key-datum pair into the tree
     void insert(const value_type& val) {
-        // TODO add explanation
         /*
          * We want to insert a new value into the tree.
          * Usually, this just means inserting it into
@@ -204,10 +203,7 @@ private:
         m_root.clear_buffer();
         m_root.clear_values();
         m_root.add_to_values(mid_value, left_child.get_id(), right_child.get_id());
-    }
-
-    void split(node_type& parent_node, int id_of_node_to_split) {
-        // TODO
+        m_depth++;
     }
 
     // Only have root and its buffer is full, so we split it up.
@@ -236,10 +232,142 @@ private:
 
         m_root.add_to_values(mid_value, left_child.get_id(), right_child.get_id());
         m_root.clear_buffer();
+        m_depth++;
     }
 
-    void flush_buffer(node_type& curr_node, int curr_depth) {
+    void split(node_type& parent_node, node_type& child_node_to_split) {
         // TODO
+        // Ideally: already get the left node too and just create one new one.
+
+    }
+
+    // Flush the items in a node's buffer to the node's children
+    void flush_buffer(node_type& curr_node, int curr_depth) {
+        /*
+         * flush_buffer is only called on nodes with a full buffer.
+         * We want to flush curr_node's full buffer down to its children.
+         * If this leads to a full buffer in a child, flush_buffer
+         * is called recursively on the child.
+         *
+         * This procedure could lead to leaves at the bottom overflowing
+         * and thus splitting, which could in turn lead to their parent
+         * nodes splitting, etc. To prevent the situation that in the
+         * middle of flushing curr_node's buffer, so many of curr_node's
+         * children need to split that curr_node itself needs to split,
+         * we maintain the small-split invariant as described in
+         * https://dspace.mit.edu/handle/1721.1/37084 .
+         *
+         * To maintain the invariant, all children with >= floor(b/2)+1
+         * children are first split before flush_buffer is called on them
+         * (for the root, this is done in the insert function that
+         * first calls flush_buffer).
+         * Thus, curr_node has at most floor(b/2) children and
+         * gets at most 1 key from each child, so curr_node gets
+         * at most floor(b/2) + floor(b/2) <= b children, and
+         * does not need to split again.
+         *
+         * Pseudocode for flush_buffer (here, flush_buffer
+         * is split into a function for the case that
+         * children are nodes (here) and children are
+         * leaves (flush_bottom_buffer)):
+         *
+         * num_children = curr_node.num_children(); high=0; child_index=0;
+         * // distribute buffer items to children
+         * while child_index < num_children:
+         *      child = curr_node.child(child_index);
+         *
+         *      if !child.is_leaf() && child.num_children() >= floor(b/2)+1:
+         *          split child; // maintain small-split invariant
+         *
+         *      low = high;
+         *      high = index s.t. [buffer[low], ..., buffer[high]) should go to current child;
+         *
+         *      if child is a leaf:
+         *          if pushing the items to it will lead to an overflow:
+         *              combine leaf items and items to push down;
+         *              split combined items into two leaves;
+         *              promote middle item to key of curr_node;
+         *          else:
+         *              push items down
+         *      else:
+         *          // Note that the child cannot split as
+         *          // we maintained the small-split invariant above
+         *          push items until child buffer is full;
+         *          flush_buffer(child);
+         *          push remaining items, if there are any;
+         *
+         *      child_index++;
+         *      // num children can change due to splitting
+         *      num_children = curr_node.num_children();
+         */
+        load(curr_node);
+        int num_children = curr_node.num_children();
+        int low, high = 0;
+        // Note that we cannot iterate through the children
+        // as the curr_node might be kicked to external memory
+        // during a recursive call to a child's flush buffer,
+        // so we have to work with indexes.
+        int child_index = 0;
+        node_type child;
+
+        while (child_index < num_children) {
+            child = m_node_id_to_node.find(curr_node.get_child_id(child_index));
+            load(child);
+
+            if (child.values_at_least_half_full())
+                split(curr_node, child);
+
+            low = high;
+            high = curr_node.index_of_upper_bound_of_buffer(child_index);
+
+            // TODO ...
+
+
+            child_index++;
+            // num_children can change due to splitting
+            num_children = curr_node.num_children();
+        }
+        curr_node.clear_buffer();
+    }
+
+    // See flush_buffer
+    void flush_bottom_buffer(node_type& curr_node) {
+        load(curr_node);
+        int num_children = curr_node.num_children();
+        int low, high = 0;
+        int child_index = 0;
+        leaf_type child;
+
+        while (child_index < num_children) {
+            child = m_leaf_id_to_leaf.find(curr_node.get_child_id(child_index));
+            load(child);
+
+            low = high;
+            high = curr_node.index_of_upper_bound_of_buffer(child_index);
+
+            // TODO ...
+            /*
+     *          if pushing the items to the child will lead to an overflow:
+     *              combine leaf items and items to push down;
+     *              split combined items into two leaves;
+     *              promote middle item to key of curr_node;
+     *          else:
+     *              push items down
+             */
+            int num_items_to_push = high - low;
+            if (child.num_buffer_items() + num_items_to_push > child.max_buffer_size()) {
+                // TODO
+            } else {
+                std::vector<value_type> buffer_items_to_push_down = curr_node.get_buffer_items(low, high);
+                child.add_to_buffer(buffer_items_to_push_down);
+                // TODO
+            }
+
+            child_index++;
+            // num_children can change due to splitting
+            num_children = curr_node.num_children();
+        }
+        curr_node.clear_buffer();
     }
 
     std::pair<data_type, bool> recursive_find(node_type& curr_node, const key_type& key, int curr_depth) {
