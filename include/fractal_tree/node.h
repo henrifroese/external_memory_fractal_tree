@@ -107,6 +107,8 @@ private:
 public:
     explicit node(int ID, bid_type BID) : m_id(ID), m_bid(BID) {};
 
+    // TODO some public functions should probably be private here
+
     const bid_type& get_bid() const {
         return m_bid;
     }
@@ -115,17 +117,47 @@ public:
         return m_id;
     }
 
-    int get_max_buffer_size() const {
+    int max_buffer_size() const {
         return max_num_buffer_items_in_node;
     }
 
-    bool buffer_full() {
+    int num_children() const {
+        return m_num_values + 1;
+    }
+
+    int get_child_id(int child_index) const {
+        assert(child_index <= m_num_values + 1);
+        return m_nodeIDs->at(child_index);
+    }
+
+    bool buffer_full() const {
         return m_num_buffer_items == max_num_buffer_items_in_node;
     }
 
     // Check if number of keys in node is >= floor(b/2)
-    bool values_at_least_half_full() {
+    bool values_at_least_half_full() const {
         return m_num_values >= (max_num_values_in_node+1) / 2;
+    }
+
+    // Given the index of a child, return the index of the first
+    // buffer item that does not belong to that child anymore.
+    int index_of_upper_bound_of_buffer(int child_index) const {
+        if (child_index == m_num_values)
+            // at last child -> return max index of buffer + 1
+            return m_num_buffer_items;
+        else {
+            key_type upper_bound_value_of_child = m_values->at(child_index);
+            // binary search for first buffer item that does not
+            // belong to the child anymore.
+            auto it = std::lower_bound(
+                    m_buffer->begin(),
+                    m_buffer->begin() + m_num_buffer_items,
+                    upper_bound_value_of_child,
+                    [](const value_type& val1, const value_type& val2)->bool {return val1.first < val2.first;}
+            );
+            int index_of_upper_bound = std::distance(m_buffer->begin(), it);
+            return index_of_upper_bound;
+        }
     }
 
     block_type* get_block() {
@@ -155,7 +187,7 @@ public:
         m_num_buffer_items = 0;
     }
 
-    void set_buffer(std::vector<value_type>& values) {
+    void set_buffer(const std::vector<value_type>& values) {
         std::copy(values.begin(), values.last(), m_buffer->begin());
         m_num_buffer_items = values.size();
     }
@@ -225,7 +257,7 @@ public:
         auto it = std::lower_bound(
                 m_buffer->begin(),
                 m_buffer->begin() + m_num_buffer_items,
-                key,
+                value_type (key, dummy_datum),
                 [](const value_type& val1, const value_type& val2)->bool {return val1.first < val2.first;}
                 );
 
@@ -264,7 +296,7 @@ public:
         auto insert_position_it = std::lower_bound(
                 m_values->begin(),
                 m_values->begin() + m_num_values,
-                value.first,
+                value,
                 [](const value_type& val1, const value_type& val2)->bool {return val1.first < val2.first;}
         );
         // Shift all values [position to insert, last position] one to the right
@@ -298,7 +330,7 @@ public:
         auto it = std::lower_bound(
                 m_values->begin(),
                 m_values->begin() + m_num_values,
-                key,
+                value_type (key, dummy_datum),
                 [](const value_type& val1, const value_type& val2)->bool {return val1.first < val2.first;}
         );
 
@@ -387,6 +419,14 @@ public:
         m_buffer = m_block->begin()->buffer;
     }
 
+    int num_buffer_items() const {
+        return m_num_buffer_items;
+    }
+
+    int max_buffer_size() const {
+        return max_num_buffer_items_in_leaf;
+    }
+
     // Add the new values to the buffer. In case of duplicate keys,
     // take the data from new_values.
     void add_to_buffer(std::vector<value_type>& new_values) {
@@ -411,7 +451,7 @@ public:
         auto it = std::lower_bound(
                 m_buffer->begin(),
                 m_buffer->begin() + m_num_buffer_items,
-                key,
+                value_type (key, dummy_datum),
                 [](const value_type& val1, const value_type& val2)->bool {return val1.first < val2.first;}
         );
 
