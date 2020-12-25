@@ -93,8 +93,15 @@ public:
 private:
     std::list<block_type*> m_unused_blocks;
     std::list<bid_block_pair_type> m_cache_list;
-    std::unordered_map<bid_type, cache_list_iterator_type> m_cache_map;
-    std::unordered_set<bid_type> m_dirty_bids;
+
+    struct bid_hash {
+        size_t operator () (const bid_type& bid) const {
+            size_t result = foxxll::longhash1(bid.offset + reinterpret_cast<uint64_t>(bid.storage));
+            return result;
+        }
+    };
+    std::unordered_map<bid_type, cache_list_iterator_type, bid_hash> m_cache_map;
+    std::unordered_set<bid_type, bid_hash> m_dirty_bids;
 };
 
 

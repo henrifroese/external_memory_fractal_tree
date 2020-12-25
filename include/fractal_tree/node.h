@@ -22,7 +22,14 @@ namespace fractal_tree {
 // Merge sorted vectors, and take from new_values in case of duplicates
 template<typename value_type>
 std::vector<value_type> merge_into(const std::vector<value_type>& new_values, const std::vector<value_type>& current_values) {
+
+    if (new_values.empty())
+        return current_values;
+    if (current_values.empty())
+        return new_values;
+
     std::vector<value_type> result;
+    result.reserve(current_values.size() + new_values.size());
 
     auto it_new_values = new_values.begin();
     auto it_current_values = current_values.begin();
@@ -107,8 +114,6 @@ private:
 public:
     explicit node(int ID, bid_type BID) : m_id(ID), m_bid(BID) {};
 
-    // TODO some public functions should probably be private here
-
     const bid_type& get_bid() const {
         return m_bid;
     }
@@ -128,6 +133,10 @@ public:
     int get_child_id(int child_index) const {
         assert(child_index <= m_num_values + 1);
         return m_nodeIDs->at(child_index);
+    }
+
+    int num_items_in_buffer() const {
+        return m_num_buffer_items;
     }
 
     bool buffer_full() const {
@@ -169,6 +178,15 @@ public:
         m_values = &(m_block->begin()->values);
         m_nodeIDs = &(m_block->begin()->nodeIDs);
         m_buffer = &(m_block->begin()->buffer);
+    }
+
+    std::vector<value_type> get_buffer_items() const {
+        return std::vector<value_type>(m_buffer->begin(), m_buffer->begin()+m_num_buffer_items);
+    }
+
+    // Return vector of items in buffer with indexes in [low, high)
+    std::vector<value_type> get_buffer_items(int low, int high) const {
+        return std::vector<value_type>(m_buffer->begin() + low, m_buffer->begin() + high);
     }
 
     std::vector<value_type> get_left_half_buffer_items() const {
@@ -280,9 +298,29 @@ public:
         m_num_values = values.size();
     }
 
+    std::vector<value_type> get_left_half_values() const {
+        int mid = (m_num_values - 1) / 2;
+        return std::vector<value_type>(m_values->begin(), m_values->begin()+mid);
+    }
+
+    std::vector<value_type> get_right_half_values() const {
+        int mid = (m_num_values - 1) / 2;
+        return std::vector<value_type>(m_values->begin()+mid, m_values->begin() + m_num_values);
+    }
+
+    std::vector<int> get_left_half_nodeIDs() const {
+        int mid = (m_num_values - 1) / 2;
+        return std::vector<int>(m_nodeIDs->begin(), m_nodeIDs->begin()+mid+1);
+    }
+
+    std::vector<int> get_right_half_nodeIDs() const {
+        int mid = (m_num_values - 1) / 2;
+        return std::vector<int>(m_nodeIDs->begin()+mid+1, m_nodeIDs->begin()+m_num_values+1);
+    }
+
     // Add value to the node's values, and add the corresponding children to
     // the node's nodeIDs
-    void add_to_values(value_type value, int left_child_id, int right_child_id) {
+    void add_to_values(value_type value, const int left_child_id, const int right_child_id) {
         /*
          * Pseudocode:
          * 1. insert value into values of node
@@ -425,6 +463,10 @@ public:
 
     int max_buffer_size() const {
         return max_num_buffer_items_in_leaf;
+    }
+
+    void clear_buffer() {
+        m_num_buffer_items = 0;
     }
 
     // Add the new values to the buffer. In case of duplicate keys,
