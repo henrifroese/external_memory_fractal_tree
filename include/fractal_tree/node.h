@@ -130,6 +130,10 @@ public:
         return m_num_values + 1;
     }
 
+    int num_values() const {
+        return m_num_values;
+    }
+
     int get_child_id(int child_index) const {
         assert(child_index <= m_num_values + 1);
         return m_nodeIDs->at(child_index);
@@ -141,6 +145,10 @@ public:
 
     bool buffer_full() const {
         return m_num_buffer_items == max_num_buffer_items_in_node;
+    }
+
+    bool buffer_empty() const {
+        return m_num_buffer_items == 0;
     }
 
     // Check if number of keys in node is >= floor(b/2)
@@ -283,7 +291,7 @@ public:
         bool found = (it != m_buffer->begin() + m_num_buffer_items) && (it->first == key);
 
         if (found)
-            return std::pair<data_type, bool>(it->second, false);
+            return std::pair<data_type, bool>(it->second, true);
         else
             return std::pair<data_type, bool>(dummy_datum, false);
     }
@@ -376,15 +384,15 @@ public:
         bool found = (it != m_values->begin() + m_num_values) && (it->first == key);
 
         if (found)
-            return std::pair<std::pair<data_type, int>, bool>(
+            return std::pair< std::pair<data_type, int>, bool >(
                     std::pair<data_type, int>(it->second,0),
                     true
                     );
         else {
             // First key that's >= what we're looking for is
             // at index i -> want to go to i'th child next.
-            int index_of_first_key_greater_equal_key = it - m_values->begin();
-            int id_of_child_to_go_to = m_nodeIDs[index_of_first_key_greater_equal_key];
+            int index_of_upper_bound_key = it - m_values->begin();
+            int id_of_child_to_go_to = m_nodeIDs[index_of_upper_bound_key];
 
             return std::pair<std::pair<data_type, int>, bool>(
                     std::pair<data_type, int>(dummy_datum,id_of_child_to_go_to),
@@ -501,7 +509,7 @@ public:
         bool found = (it != m_buffer->begin() + m_num_buffer_items) && (it->first == key);
 
         if (found)
-            return std::pair<data_type, bool>(it->second, false);
+            return std::pair<data_type, bool>(it->second, true);
         else
             return std::pair<data_type, bool>(dummy_datum, false);
     }
