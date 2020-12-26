@@ -252,30 +252,6 @@ private:
         m_depth++;
     }
 
-    void split_singular_root2() {
-        std::array<value_type, max_num_buffer_items_in_node>* buffer = m_root.get_buffer();
-
-        // Left child
-        leaf_type& left_child = get_new_leaf();
-        load(left_child);
-        m_dirty_bids.insert(left_child.get_bid());
-
-        left_child.move_to_buffer(buffer->begin(), buffer->begin() + node_buffer_mid); // TODO
-
-        // Right child
-        leaf_type& right_child = get_new_leaf();
-        load(right_child);
-        m_dirty_bids.insert(right_child.get_bid());
-
-        right_child.move_to_buffer(buffer->begin() + node_buffer_mid, buffer->begin() + m_root.num_items_in_buffer());
-
-        // Update root
-        value_type mid_value = buffer[node_buffer_mid];
-        m_root.add_to_values(mid_value, left_child.get_id(), right_child.get_id());
-        m_root.clear_buffer();
-        m_depth++;
-    }
-
     void split(node_type& parent_node, leaf_type& left_child, int low, int high) {
         std::vector<value_type> combined_values = merge_into<value_type>(
                 parent_node.get_buffer_items(low, high), left_child.get_buffer_items());
