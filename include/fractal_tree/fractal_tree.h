@@ -8,6 +8,7 @@
 #ifndef EXTERNAL_MEMORY_FRACTAL_TREE_FRACTAL_TREE_H
 #define EXTERNAL_MEMORY_FRACTAL_TREE_FRACTAL_TREE_H
 
+#include <tlx/logger.hpp>
 #include <foxxll/mng/typed_block.hpp>
 #include <foxxll/common/utils.hpp>
 #include <foxxll/common/types.hpp>
@@ -27,6 +28,9 @@ template <typename KeyType,
           typename AllocStr
          >
 class fractal_tree {
+
+    static constexpr bool debug = true;
+
     // Type declarations.
     using key_type = KeyType;
     using data_type = DataType;
@@ -46,25 +50,20 @@ class fractal_tree {
         max_num_buffer_items_in_node = node_type::max_num_buffer_items_in_node,
         max_num_values_in_node = node_type::max_num_values_in_node,
         max_num_buffer_items_in_leaf = leaf_type::max_num_buffer_items_in_leaf,
-        node_buffer_mid = (max_num_buffer_items_in_node - 1) / 2,
-        node_values_mid = (max_num_values_in_node - 1) / 2,
-        leaf_buffer_mid = (max_num_buffer_items_in_leaf - 1) / 2
+        node_buffer_mid = node_type::buffer_mid,
+        node_values_mid = node_type::values_mid,
+        leaf_buffer_mid = leaf_type::buffer_mid
     };
 
     // Caches for nodes and leaves.
+    static_assert(RawMemoryPoolSize / 2 >= RawBlockSize, "RawMemoryPoolSize too small -> too few nodes fit in cache!");
     enum {
         num_blocks_in_leaf_cache = (RawMemoryPoolSize / 2) / RawBlockSize,
         // -1 as root is always kept in cache
         num_blocks_in_node_cache = (RawMemoryPoolSize / 2) / RawBlockSize - 1
     };
-    using node_cache_type = fractal_tree_cache<node_block_type, bid_type, num_blocks_in_node_cache>;
-    using leaf_cache_type = fractal_tree_cache<leaf_block_type, bid_type, num_blocks_in_leaf_cache>;
-
-    static data_type dummy_datum = data_type();
-
-private:
-    std::unordered_map<int, node_type*> m_node_id_to_node;
-    std::unordered_map<int, leaf_type*> m_leaf_id_to_leaf;
+    static_assert(num_blocks_in_leaf_cache >= 2, "RawMemoryPoolSize too small -> less than 2 leaves fit in leaf cache!");
+    static_assert(num_blocks_in_leaf_cache >= 2, "RawMemoryPoolSize too small -> less than 2 nodes fit in node cache!");
 
     struct bid_hash {
         size_t operator () (const bid_type& bid) const {
@@ -72,6 +71,16 @@ private:
             return result;
         }
     };
+
+    using node_cache_type = fractal_tree_cache<node_block_type, bid_type, bid_hash, num_blocks_in_node_cache>;
+    using leaf_cache_type = fractal_tree_cache<leaf_block_type, bid_type, bid_hash, num_blocks_in_leaf_cache>;
+
+    static const data_type dummy_datum = data_type();
+
+private:
+    std::unordered_map<int, node_type*> m_node_id_to_node;
+    std::unordered_map<int, leaf_type*> m_leaf_id_to_leaf;
+
     std::unordered_set<bid_type, bid_hash> m_dirty_bids;
 
     node_cache_type m_node_cache = node_cache_type(m_dirty_bids);
@@ -88,7 +97,19 @@ public:
         m_root(curr_node_id++, bid_type()) {
         // Set up root.
         m_root.set_block(new node_block_type);
-        m_node_id_to_node.insert(std::pair<int, node_type>(m_root.get_id()), &m_root);
+        m_node_id_to_node.insert(std::pair<int, node_type*>(m_root.get_id(), &m_root));
+
+        TLX_LOG << "sizeof(KeyType):\t" << sizeof(KeyType) << "\tBytes";
+        TLX_LOG << "sizeof(DataType):\t" << sizeof(DataType) << "\tBytes";
+        TLX_LOG << "RawBlockSize:\t" << RawBlockSize << "\tBytes";
+        TLX_LOG << "RawMemoryPoolSize:\t" << RawMemoryPoolSize << "\tBytes";
+        TLX_LOG << "Max number of buffer items per node:\t" << max_num_buffer_items_in_node;
+        TLX_LOG << "Max number of values per node:\t" << max_num_values_in_node;
+        TLX_LOG << "Max number of children per node:\t" << max_num_values_in_node+1;
+        TLX_LOG << "Max number of items per leaf:\t" << max_num_buffer_items_in_leaf;
+
+        TLX_LOG1 << "Number of leaves that fit in leaf cache:\t" << num_blocks_in_leaf_cache;
+        TLX_LOG1 << "Number of nodes that fit in node cache:\t" << num_blocks_in_node_cache;
     }
 
     //! non-copyable: delete copy-constructor
@@ -97,10 +118,19 @@ public:
     fractal_tree& operator = (const fractal_tree&) = delete;
 
     ~fractal_tree() {
+        // Delete the root node's block
+        // (not in cache).
+        delete m_root.get_block();
+
+        // Delete the node objects (not the
+        // actual data blocks, those are
+        // managed by the cache).
         for (auto it = m_leaf_id_to_leaf.begin(); it != m_leaf_id_to_leaf.end(); it++)
             delete it->second;
-        for (auto it = m_node_id_to_node.begin(); it != m_node_id_to_node.end(); it++)
-            delete it->second;
+        for (auto it = m_node_id_to_node.begin(); it != m_node_id_to_node.end(); it++) {
+            if (*(it->second) != m_root)
+                delete it->second;
+        }
     }
 
     // Insert new key-datum pair into the tree
@@ -547,8 +577,7 @@ template <typename KeyType,
         typename DataType,
         size_t RawBlockSize,
         size_t RawMemoryPoolSize,
-        DataType DummyDatum,
-        typename AllocStr
+        typename AllocStr = foxxll::default_alloc_strategy
 >
 using ftree = fractal_tree::fractal_tree<KeyType, DataType, RawBlockSize, RawMemoryPoolSize, AllocStr>;
 

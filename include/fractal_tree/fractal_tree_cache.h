@@ -5,18 +5,18 @@
 #ifndef EXTERNAL_MEMORY_FRACTAL_TREE_FRACTAL_TREE_CACHE_H
 #define EXTERNAL_MEMORY_FRACTAL_TREE_FRACTAL_TREE_CACHE_H
 
-
+#include <tlx/logger.hpp>
 #include <list>
 #include <unordered_map>
 #include <unordered_set>
 #include <foxxll/io/request_operations.hpp>
 
-
-template<typename BlockType, typename BidType, unsigned NumBlocksInCache>
+template<typename BlockType, typename BidType, typename BidHash, unsigned NumBlocksInCache>
 class fractal_tree_cache {
 
     using block_type = BlockType;
     using bid_type = BidType;
+    using bid_hash = BidHash;
 
     enum {
         max_num_blocks_in_cache = NumBlocksInCache
@@ -26,7 +26,7 @@ class fractal_tree_cache {
     using cache_list_iterator_type = typename std::list<bid_block_pair_type>::iterator;
 
 public:
-    explicit fractal_tree_cache(std::unordered_set<bid_type>& dirty_bids) : m_dirty_bids(dirty_bids) {
+    explicit fractal_tree_cache(std::unordered_set<bid_type, bid_hash>& dirty_bids) : m_dirty_bids(dirty_bids) {
         for (size_t i = 0; i < max_num_blocks_in_cache; i++)
             m_unused_blocks.push_back(new block_type);
     }
@@ -94,12 +94,6 @@ private:
     std::list<block_type*> m_unused_blocks;
     std::list<bid_block_pair_type> m_cache_list;
 
-    struct bid_hash {
-        size_t operator () (const bid_type& bid) const {
-            size_t result = foxxll::longhash1(bid.offset + reinterpret_cast<uint64_t>(bid.storage));
-            return result;
-        }
-    };
     std::unordered_map<bid_type, cache_list_iterator_type, bid_hash> m_cache_map;
     std::unordered_set<bid_type, bid_hash>& m_dirty_bids;
 };
