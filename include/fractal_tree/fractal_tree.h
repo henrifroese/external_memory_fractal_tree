@@ -46,10 +46,19 @@ class fractal_tree {
         max_num_buffer_items_in_node = node_type::max_num_buffer_items_in_node,
         max_num_values_in_node = node_type::max_num_values_in_node,
         max_num_buffer_items_in_leaf = leaf_type::max_num_buffer_items_in_leaf,
-        node_buffer_mid = (max_num_buffer_items_in_node - 1) / 2,
-        node_values_mid = (max_num_values_in_node - 1) / 2,
-        leaf_buffer_mid = (max_num_buffer_items_in_leaf - 1) / 2
+        node_buffer_mid = node_type::buffer_mid,
+        node_values_mid = node_type::values_mid,
+        leaf_buffer_mid = leaf_type::buffer_mid
     };
+    using node_buffer_type = typename node_type::buffer_type;
+    using node_values_type = typename node_type::values_type;
+    using node_nodeIDs_type = typename node_type::nodeIDs_type;
+    using leaf_buffer_type = typename leaf_type::buffer_type;
+
+    using node_buffer_it_type = typename node_type::buffer_it_type;
+    using node_values_it_type = typename node_type::values_it_type;
+    using node_nodeIDs_it_type = typename node_type::nodeIDs_it_type;
+    using leaf_buffer_it_type = typename leaf_type::buffer_it_type;
 
     // Caches for nodes and leaves.
     enum {
@@ -220,15 +229,80 @@ private:
         m_depth++;
     }
 
+    // Split up the root in cases where we do not only
+    // have the root (in that case: see split_singular_root).
+    void split_root2() {
+        /*
+         * Pseudocode:
+         * 1. Create two new children nodes, left_child and right_child
+         * 2. Move left half of root values to left child values,
+         *    move right half of root values to right child values
+         * 3. Move root buffer items to appropriate children
+         * 4. Clear root buffer and values; promote mid item
+         *    to values; set child ids
+         *
+         * 1+2+3 are done sequentially for each child to minimize
+         * in-memory footprint.
+         */
+        // Gather buffer items / values / nodeIDs to distribute to the children
+        node_buffer_type* buffer = m_root.get_buffer();
+        node_values_type* values = m_root.get_values();
+        node_nodeIDs_type* nodeIDs = m_root.get_nodeIDs();
+
+        node_values_it_type values_left_begin = values->begin();
+        node_values_it_type values_left_end = values_left_begin + node_values_mid;
+        node_values_it_type values_right_begin = values_left_end;
+        node_values_it_type values_right_end = values->begin() + m_root.num_values();
+
+        node_nodeIDs_it_type nodeIDs_left_begin = nodeIDs->begin();
+        node_nodeIDs_it_type nodeIDs_left_end =
+
+        // Create new left child and populate it
+        node_type& left_child = get_new_node();
+        load(left_child);
+        m_dirty_bids.insert(left_child.get_bid());
+
+        left_child.set_buffer(buffer->begin(), );
+        left_child.set_values(values_for_left_child, nodeIDs_for_left_child);
+
+
+
+        std::vector<value_type> values_for_left_child = m_root.get_left_half_values();
+        std::vector<value_type> values_for_right_child = m_root.get_right_half_values();
+        std::vector<int> nodeIDs_for_left_child = m_root.get_left_half_nodeIDs();
+        std::vector<int> nodeIDs_for_right_child = m_root.get_right_half_nodeIDs();
+
+        value_type mid_value = m_root.get_mid_value();
+        std::vector<value_type> buffer_items_for_left_child = m_root.get_left_buffer_items_for_split(mid_value);
+        std::vector<value_type> buffer_items_for_right_child = m_root.get_right_buffer_items_for_split(mid_value);
+
+
+        // Create new right child and populate it
+        node_type& right_child = get_new_node();
+        load(right_child);
+        m_dirty_bids.insert(right_child.get_bid());
+
+        right_child.set_buffer(buffer_items_for_right_child);
+        right_child.set_values(values_for_right_child, nodeIDs_for_right_child);
+
+        // Update root
+        m_root.clear_buffer();
+        m_root.clear_values();
+        m_root.add_to_values(mid_value, left_child.get_id(), right_child.get_id());
+        m_depth++;
+    }
+/*
     // Only have root and its buffer is full, so we split it up.
     void split_singular_root() {
-        /* Pseudocode:
+        */
+/* Pseudocode:
          * 1. Create two new children leaves
          * 2. Move left half of values in root buffer to left child buffer,
          *    right half to right child buffer
          * 3. Promote mid item to key in root,
          *    set child ids, and clear the root's buffer.
-        */
+        *//*
+
         // Left child
         leaf_type& left_child = get_new_leaf();
         load(left_child);
@@ -251,16 +325,25 @@ private:
         m_root.clear_buffer();
         m_depth++;
     }
+*/
 
-    void split_singular_root2() {
-        std::array<value_type, max_num_buffer_items_in_node>* buffer = m_root.get_buffer();
+    void split_singular_root() {
+        /* Pseudocode:
+         * 1. Create two new children leaves
+         * 2. Move left half of values in root buffer to left child buffer,
+         *    right half to right child buffer
+         * 3. Promote mid item to key in root,
+         *    set child ids, and clear the root's buffer.
+        */
+
+        node_buffer_type* buffer = m_root.get_buffer();
 
         // Left child
         leaf_type& left_child = get_new_leaf();
         load(left_child);
         m_dirty_bids.insert(left_child.get_bid());
 
-        left_child.move_to_buffer(buffer->begin(), buffer->begin() + node_buffer_mid); // TODO
+        left_child.move_to_buffer(buffer->begin(), buffer->begin() + node_buffer_mid);
 
         // Right child
         leaf_type& right_child = get_new_leaf();
@@ -270,7 +353,7 @@ private:
         right_child.move_to_buffer(buffer->begin() + node_buffer_mid, buffer->begin() + m_root.num_items_in_buffer());
 
         // Update root
-        value_type mid_value = buffer[node_buffer_mid];
+        value_type mid_value = buffer->at(node_buffer_mid);
         m_root.add_to_values(mid_value, left_child.get_id(), right_child.get_id());
         m_root.clear_buffer();
         m_depth++;

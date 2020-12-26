@@ -62,6 +62,48 @@ std::vector<value_type> merge_into(const std::vector<value_type>& new_values, co
     return result;
 }
 
+template<typename value_type, typename it_type>
+std::vector<value_type> merge_into(
+        it_type new_values_begin, it_type new_values_end,
+        it_type current_values_begin, it_type current_values_end
+        ) {
+
+    int num_current_values = current_values_end - current_values_begin;
+    int num_new_values = new_values_end - new_values_begin;
+
+    std::vector<value_type> result;
+    result.reserve(num_current_values + num_new_values);
+
+    auto it_new_values = new_values_begin;
+    auto it_current_values = current_values_begin;
+
+    while ((it_new_values != new_values_end) && (it_current_values != current_values_end)) {
+        // Compare by key
+        if (it_new_values->first < it_current_values->first) {
+            result.push_back(*it_new_values);
+            it_new_values++;
+            continue;
+        }
+        if (it_new_values->first > it_current_values->first) {
+            result.push_back(*it_current_values);
+            it_current_values++;
+            continue;
+        }
+        // Equal keys -> take new value, discard value from buffer
+        result.push_back(*it_new_values);
+        it_new_values++;
+        it_current_values++;
+    }
+    // Insert remaining elements
+    if (it_new_values != new_values_end) {
+        std::move(it_new_values, new_values_end, std::back_inserter(result));
+    }
+    if (it_current_values != current_values_end) {
+        std::move(it_current_values, current_values_end, std::back_inserter(result));
+    }
+
+    return result;
+}
 
 template<typename KeyType,
      typename DataType,
@@ -86,15 +128,21 @@ public:
         values_mid = (max_num_values_in_node - 1) / 2
     };
 
+    using buffer_type = typename std::array<value_type, max_num_buffer_items_in_node>;
+    using values_type = typename std::array<value_type, max_num_values_in_node>;
+    using nodeIDs_type = typename std::array<value_type, max_num_values_in_node+1>;
+
+    using buffer_it_type = typename buffer_type::iterator;
+    using values_it_type = typename values_type::iterator;
+    using nodeIDs_it_type = typename nodeIDs_type::iterator;
+
     // This is how the data of the inner nodes will be stored in a block.
     struct node_block {
-        std::array<value_type, max_num_values_in_node>       values;
-        std::array<int,        max_num_values_in_node+1>     nodeIDs;
-        std::array<value_type, max_num_buffer_items_in_node> buffer;
+        values_type  values;
+        nodeIDs_type nodeIDs;
+        buffer_type  buffer;
     };
     using block_type = foxxll::typed_block<RawBlockSize, node_block>;
-    using buffer_iterator_type = typename std::array<value_type, max_num_buffer_items_in_node>::iterator;
-    using values_iterator_type = typename std::array<value_type, max_num_values_in_node>::iterator;
 
     static data_type dummy_datum = data_type();
 
@@ -107,9 +155,9 @@ private:
     int m_num_values = 0;
     block_type* m_block = nullptr;
 
-    std::array<const value_type, max_num_values_in_node>*       m_values  = nullptr;
-    std::array<const int,        max_num_values_in_node+1>*     m_nodeIDs = nullptr;
-    std::array<const value_type, max_num_buffer_items_in_node>* m_buffer  = nullptr;
+    values_type* m_values  = nullptr;
+    nodeIDs_type* m_nodeIDs = nullptr;
+    buffer_type* m_buffer  = nullptr;
 
 public:
     explicit node(int ID, bid_type BID) : m_id(ID), m_bid(BID) {};
@@ -149,6 +197,10 @@ public:
 
     bool buffer_empty() const {
         return m_num_buffer_items == 0;
+    }
+
+    buffer_type* get_buffer() {
+        return m_buffer;
     }
 
     // Check if number of keys in node is >= floor(b/2)
@@ -258,6 +310,7 @@ public:
     // values.
     std::vector<value_type> update_duplicate_values(const std::vector<value_type>& new_values) {
         std::vector<value_type> remaining_new_values;
+        remaining_new_values.reserve(new_values.size());
 
         auto it_new_values = new_values.begin();
         auto it_current_values = m_values->begin();
@@ -431,11 +484,16 @@ class leaf final {
 
     // Set up sizes and types for the blocks used to store inner nodes' data in external memory.
     enum {
-        max_num_buffer_items_in_leaf = (int) (RawBlockSize / (sizeof(KeyType) + sizeof(DataType)))
+        max_num_buffer_items_in_leaf = (int) (RawBlockSize / (sizeof(KeyType) + sizeof(DataType))),
+        buffer_mid = (max_num_buffer_items_in_leaf - 1) / 2
     };
+
+    using buffer_type = typename std::array<std::pair<KeyType,DataType>, max_num_buffer_items_in_leaf>;
+    using buffer_it_type = typename buffer_type::iterator;
+
     // This is how the data of the leaves will be stored in a block.
     struct leaf_block {
-        std::array<std::pair<KeyType,DataType>, max_num_buffer_items_in_leaf> buffer;
+        buffer_type buffer;
     };
     using block_type = foxxll::typed_block<RawBlockSize, leaf_block>;
 
@@ -447,7 +505,7 @@ private:
     int m_num_buffer_items = 0;
     block_type* m_block = NULL;
 
-    std::array<value_type, max_num_buffer_items_in_leaf>* m_buffer  = nullptr;
+    buffer_type* m_buffer  = nullptr;
 
 public:
     explicit leaf(int ID, bid_type BID) : m_id(ID), m_bid(BID) {};
@@ -492,7 +550,21 @@ public:
         std::vector<value_type> new_buffer_values = merge_into<value_type>(new_values, buffer_values);
 
         // Replace buffer with new buffer values
-        std::copy(new_buffer_values.begin(), new_buffer_values.end(), m_buffer->begin());
+        std::move(new_buffer_values.begin(), new_buffer_values.end(), m_buffer->begin());
+        m_num_buffer_items = new_buffer_values.size();
+    }
+
+    void move_to_buffer(buffer_it_type it_begin, buffer_it_type it_end) {
+        // Merge, and take from new items in case of duplicates
+        assert(it_end - it_begin + m_num_buffer_items <= max_num_buffer_items_in_leaf);
+
+        std::vector<value_type> new_buffer_values =
+                merge_into<value_type, buffer_it_type>(
+                        it_begin, it_end,
+                        m_buffer->begin(), m_buffer->begin()+m_num_buffer_items
+                        );
+
+        std::move(new_buffer_values.begin(), new_buffer_values.end(), m_buffer->begin());
         m_num_buffer_items = new_buffer_values.size();
     }
 
