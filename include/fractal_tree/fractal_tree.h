@@ -123,7 +123,7 @@ public:
                 split_singular_root();
             else {
                 // Potentially split to keep "small-split invariant"
-                if (m_root.num_values() >= (max_num_values_in_node+1) / 2)
+                if (m_root.values_at_least_half_full())
                     split_root();
                 // Flush buffer
                 else {
@@ -134,9 +134,8 @@ public:
                 }
             }
         }
-
         assert(m_root.buffer_empty());
-        m_root.insert_into_buffer(val);
+        m_root.add_to_buffer(val);
     }
 
     // First value of return is dummy if key is not found.
@@ -297,8 +296,8 @@ private:
         std::vector<int> nodeIDs_for_right_child = left_child.get_right_half_nodeIDs();
 
         value_type mid_value = left_child.get_mid_value();
-        std::vector<value_type> buffer_items_for_left_child = left_child.get_left_buffer_items_for_split(mid_value);
-        std::vector<value_type> buffer_items_for_right_child = left_child.get_right_buffer_items_for_split(mid_value);
+        std::vector<value_type> buffer_items_for_left_child = left_child.get_buffer_items_less_than(mid_value);
+        std::vector<value_type> buffer_items_for_right_child = left_child.get_buffer_items_greater_equal_than(mid_value);
 
         // Create new right child and populate it
         node_type& right_child = get_new_node();
@@ -318,7 +317,7 @@ private:
         m_dirty_bids.insert(parent_node);
     }
 
-    // Flush the items in a node's buffer to the node's children
+    // Flush the items in a node's full buffer to the node's children
     void flush_buffer(node_type& curr_node, int curr_depth) {
         /*
          * flush_buffer is only called on nodes with a full buffer.
@@ -348,7 +347,8 @@ private:
          * children are nodes (here) and children are
          * leaves (flush_bottom_buffer)):
          *
-         * num_children = curr_node.num_children(); high=0; child_index=0;
+         * num_children = curr_node.num_children();
+         * high=0, child_index=0;
          * // distribute buffer items to children
          * while child_index < num_children:
          *      child = curr_node.child(child_index);
@@ -390,11 +390,8 @@ private:
             node_type& child = *m_node_id_to_node.find(curr_node.get_child_id(child_index));
             load(child);
 
-            if (child.values_at_least_half_full()) {
+            if (child.values_at_least_half_full())
                 split(curr_node, child);
-                m_dirty_bids.add(child.get_bid());
-                m_dirty_bids.add(curr_node.get_bid());
-            }
 
             low = high;
             high = curr_node.index_of_upper_bound_of_buffer(child_index);
@@ -403,7 +400,7 @@ private:
             int space_in_child_buffer = child.max_buffer_size() - child.num_items_in_buffer();
 
             if (num_items_to_push > space_in_child_buffer) {
-                // Again we cannot keep the items to push down in-memory as
+                // Here we cannot keep the items to push down in-memory as
                 // that could lead to stack overflows in recursive calls to
                 // flush_buffer -> use appropriate scoping.
 
@@ -464,12 +461,10 @@ private:
 
             int num_items_to_push = high - low;
             // If pushing the items to the child would lead to an overflow ...
-            if (child.num_buffer_items() + num_items_to_push > child.max_buffer_size()) {
+            if (child.num_buffer_items() + num_items_to_push > child.max_buffer_size())
                 split(curr_node, child, low, high);
-                m_dirty_bids.add(curr_node.get_bid());
-                m_dirty_bids.add(child.get_bid());
             // Else: just push down
-            } else {
+            else {
                 std::vector<value_type> buffer_items_to_push_down = curr_node.get_buffer_items(low, high);
                 child.add_to_buffer(buffer_items_to_push_down);
                 m_dirty_bids.add(child.get_bid());
