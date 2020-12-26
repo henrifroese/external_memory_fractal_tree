@@ -101,7 +101,7 @@ private:
         }
     };
     std::unordered_map<bid_type, cache_list_iterator_type, bid_hash> m_cache_map;
-    std::unordered_set<bid_type, bid_hash> m_dirty_bids;
+    std::unordered_set<bid_type, bid_hash>& m_dirty_bids;
 };
 
 

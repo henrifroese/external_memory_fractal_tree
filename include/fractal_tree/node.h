@@ -53,10 +53,10 @@ std::vector<value_type> merge_into(const std::vector<value_type>& new_values, co
     }
     // Insert remaining elements
     if (it_new_values != new_values.end()) {
-        std::copy(it_new_values, new_values.end(), std::back_inserter(result));
+        std::move(it_new_values, new_values.end(), std::back_inserter(result));
     }
     if (it_current_values != current_values.end()) {
-        std::copy(it_current_values, current_values.end(), std::back_inserter(result));
+        std::move(it_current_values, current_values.end(), std::back_inserter(result));
     }
 
     return result;
@@ -102,7 +102,6 @@ private:
     const int m_id;
     const bid_type m_bid;
 
-private:
     int m_num_buffer_items = 0;
     int m_num_values = 0;
     block_type* m_block = nullptr;
@@ -113,6 +112,10 @@ private:
 
 public:
     explicit node(int ID, bid_type BID) : m_id(ID), m_bid(BID) {};
+
+
+    // ---------------- Basic methods ----------------
+
 
     const bid_type& get_bid() const {
         return m_bid;
@@ -156,6 +159,17 @@ public:
         return m_num_values >= (max_num_values_in_node+1) / 2;
     }
 
+    void set_block(block_type*& block) {
+        m_block = block;
+        m_values = &(m_block->begin()->values);
+        m_nodeIDs = &(m_block->begin()->nodeIDs);
+        m_buffer = &(m_block->begin()->buffer);
+    }
+
+
+    // ---------------- Methods for the buffer ----------------
+
+
     // Given the index of a child, return the index of the first
     // buffer item that does not belong to that child anymore.
     int index_of_upper_bound_of_buffer(int child_index) const {
@@ -163,7 +177,7 @@ public:
             // at last child -> return max index of buffer + 1
             return m_num_buffer_items;
         else {
-            key_type upper_bound_value_of_child = m_values->at(child_index);
+            value_type upper_bound_value_of_child = m_values->at(child_index);
             // binary search for first buffer item that does not
             // belong to the child anymore.
             auto it = std::lower_bound(
@@ -175,17 +189,6 @@ public:
             int index_of_upper_bound = std::distance(m_buffer->begin(), it);
             return index_of_upper_bound;
         }
-    }
-
-    block_type* get_block() {
-        return m_block;
-    }
-
-    void set_block(block_type*& block) {
-        m_block = block;
-        m_values = &(m_block->begin()->values);
-        m_nodeIDs = &(m_block->begin()->nodeIDs);
-        m_buffer = &(m_block->begin()->buffer);
     }
 
     std::vector<value_type> get_buffer_items() const {
@@ -205,6 +208,28 @@ public:
         return std::vector<value_type>(m_buffer->begin()+buffer_mid+1, m_buffer->end());
     }
 
+    std::vector<value_type> get_buffer_items_less_than(value_type bound) const {
+        auto it = std::lower_bound(
+                m_buffer->begin(),
+                m_buffer->begin() + m_num_buffer_items,
+                bound,
+                [](const value_type& val1, const value_type& val2)->bool {return val1.first < val2.first;}
+        );
+        // std::lower_bound finds first key that's >= bound, or the end
+        return std::vector<value_type>(m_buffer->begin(), it);
+    }
+
+    std::vector<value_type> get_buffer_items_greater_equal_than(value_type bound) const {
+        auto it = std::lower_bound(
+                m_buffer->begin(),
+                m_buffer->begin() + m_num_buffer_items,
+                bound,
+                [](const value_type& val1, const value_type& val2)->bool {return val1.first < val2.first;}
+        );
+        // std::lower_bound finds first key that's >= bound, or the end
+        return std::vector<value_type>(it, m_buffer->begin()+m_num_buffer_items);
+    }
+
     value_type get_mid_buffer_item() const {
         return m_buffer->at(buffer_mid);
     }
@@ -214,8 +239,18 @@ public:
     }
 
     void set_buffer(const std::vector<value_type>& values) {
-        std::copy(values.begin(), values.last(), m_buffer->begin());
+        std::move(values.begin(), values.last(), m_buffer->begin());
         m_num_buffer_items = values.size();
+    }
+
+    // Add the new value to the buffer. In case of a duplicate
+    // key, take the datum from the new value.
+    void add_to_buffer(value_type new_value) {
+        if (buffer_empty()) {
+            *(m_buffer->begin()) = new_value;
+            m_num_buffer_items++;
+        } else
+            add_to_buffer(std::vector<value_type> { new_value });
     }
 
     // Add the new values to the buffer. In case of duplicate keys,
@@ -249,8 +284,59 @@ public:
         std::vector<value_type> new_buffer_values = merge_into<value_type>(new_values, buffer_values);
 
         // Replace buffer with new buffer values
-        std::copy(new_buffer_values.begin(), new_buffer_values.end(), m_buffer->begin());
+        std::move(new_buffer_values.begin(), new_buffer_values.end(), m_buffer->begin());
         m_num_buffer_items = new_buffer_values.size();
+    }
+
+    std::pair<data_type, bool> buffer_find(const key_type& key) const {
+        // Binary search for key
+        auto it = std::lower_bound(
+                m_buffer->begin(),
+                m_buffer->begin() + m_num_buffer_items,
+                value_type (key, dummy_datum),
+                [](const value_type& val1, const value_type& val2)->bool {return val1.first < val2.first;}
+                );
+
+        // std::lower_bound finds first key that's >= what we look for, or the end
+        bool found = (it != m_buffer->begin() + m_num_buffer_items) && (it->first == key);
+
+        if (found)
+            return std::pair<data_type, bool>(it->second, true);
+        else
+            return std::pair<data_type, bool>(dummy_datum, false);
+    }
+
+
+    // ---------------- Methods for the values & nodeIDs ----------------
+
+    void clear_values() {
+        m_num_values = 0;
+    }
+
+    void set_values(std::vector<value_type>& values, std::vector<int>& nodeIDs) {
+        std::move(values.begin(), values.last(), m_values->begin());
+        std::move(nodeIDs.begin(), nodeIDs.end(), m_nodeIDs->begin());
+        m_num_values = values.size();
+    }
+
+    std::vector<value_type> get_left_half_values() const {
+        int mid = (m_num_values - 1) / 2;
+        return std::vector<value_type>(m_values->begin(), m_values->begin()+mid);
+    }
+
+    std::vector<value_type> get_right_half_values() const {
+        int mid = (m_num_values - 1) / 2;
+        return std::vector<value_type>(m_values->begin()+mid, m_values->begin() + m_num_values);
+    }
+
+    std::vector<int> get_left_half_nodeIDs() const {
+        int mid = (m_num_values - 1) / 2;
+        return std::vector<int>(m_nodeIDs->begin(), m_nodeIDs->begin()+mid+1);
+    }
+
+    std::vector<int> get_right_half_nodeIDs() const {
+        int mid = (m_num_values - 1) / 2;
+        return std::vector<int>(m_nodeIDs->begin()+mid+1, m_nodeIDs->begin()+m_num_values+1);
     }
 
     // Given new_values that should be inserted to the buffer, replace duplicate keys
@@ -276,54 +362,6 @@ public:
         }
 
         return remaining_new_values;
-    }
-
-    std::pair<data_type, bool> buffer_find(const key_type& key) const {
-        // Binary search for key
-        auto it = std::lower_bound(
-                m_buffer->begin(),
-                m_buffer->begin() + m_num_buffer_items,
-                value_type (key, dummy_datum),
-                [](const value_type& val1, const value_type& val2)->bool {return val1.first < val2.first;}
-                );
-
-        // std::lower_bound finds first key that's >= what we look for, or the end
-        bool found = (it != m_buffer->begin() + m_num_buffer_items) && (it->first == key);
-
-        if (found)
-            return std::pair<data_type, bool>(it->second, true);
-        else
-            return std::pair<data_type, bool>(dummy_datum, false);
-    }
-
-    void clear_values() {
-        m_num_values = 0;
-    }
-
-    void set_values(std::vector<value_type>& values, std::vector<int>& nodeIDs) {
-        std::copy(values.begin(), values.last(), m_values->begin());
-        std::copy(nodeIDs.begin(), nodeIDs.end(), m_nodeIDs->begin());
-        m_num_values = values.size();
-    }
-
-    std::vector<value_type> get_left_half_values() const {
-        int mid = (m_num_values - 1) / 2;
-        return std::vector<value_type>(m_values->begin(), m_values->begin()+mid);
-    }
-
-    std::vector<value_type> get_right_half_values() const {
-        int mid = (m_num_values - 1) / 2;
-        return std::vector<value_type>(m_values->begin()+mid, m_values->begin() + m_num_values);
-    }
-
-    std::vector<int> get_left_half_nodeIDs() const {
-        int mid = (m_num_values - 1) / 2;
-        return std::vector<int>(m_nodeIDs->begin(), m_nodeIDs->begin()+mid+1);
-    }
-
-    std::vector<int> get_right_half_nodeIDs() const {
-        int mid = (m_num_values - 1) / 2;
-        return std::vector<int>(m_nodeIDs->begin()+mid+1, m_nodeIDs->begin()+m_num_values+1);
     }
 
     // Add value to the node's values, and add the corresponding children to
@@ -492,7 +530,7 @@ public:
         std::vector<value_type> new_buffer_values = merge_into<value_type>(new_values, buffer_values);
 
         // Replace buffer with new buffer values
-        std::copy(new_buffer_values.begin(), new_buffer_values.end(), m_buffer->begin());
+        std::move(new_buffer_values.begin(), new_buffer_values.end(), m_buffer->begin());
         m_num_buffer_items = new_buffer_values.size();
     }
 
