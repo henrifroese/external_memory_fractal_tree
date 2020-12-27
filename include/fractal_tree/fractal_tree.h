@@ -16,6 +16,7 @@
 #include "fractal_tree_cache.h"
 #include <unordered_map>
 #include <unordered_set>
+#include <foxxll/mng/block_manager.hpp>
 
 namespace stxxl {
 
@@ -38,6 +39,7 @@ class fractal_tree {
 
     using self_type = fractal_tree<KeyType, DataType, RawBlockSize, RawMemoryPoolSize, AllocStr>;
     using bid_type = foxxll::BID<RawBlockSize>;
+    using alloc_strategy_type = AllocStr;
 
     // Nodes and Leaves declarations.
     using node_type = node<KeyType, DataType, RawBlockSize>;
@@ -91,6 +93,9 @@ private:
     int m_depth = 1;
 
     node_type m_root;
+    foxxll::block_manager* bm = foxxll::block_manager::get_instance();
+    alloc_strategy_type m_alloc_strategy;
+
 
 public:
     fractal_tree() :
@@ -178,12 +183,14 @@ private:
     node_type& get_new_node() {
         auto* new_node = new node_type(curr_node_id++, bid_type());
         m_node_id_to_node.insert(std::pair<int, node_type>(new_node->get_id(), new_node));
+        bm->new_block(m_alloc_strategy, new_node->get_bid());
         return *new_node;
     }
 
     leaf_type& get_new_leaf() {
         auto* new_leaf = new leaf_type(curr_leaf_id++, bid_type());
         m_leaf_id_to_leaf.insert(std::pair<int, node_type>(new_leaf->get_id(), new_leaf));
+        bm->new_block(m_alloc_strategy, new_leaf->get_bid());
         return *new_leaf;
     }
 

@@ -10,8 +10,15 @@
 #include <stxxl/bits/containers/pager.h>
 
 
+constexpr unsigned n = 1024;
+
+struct unpadded_leaf_block {
+    std::array<int, n> buffer;
+};
+
 struct leaf_block {
-    std::array<int, 1024> buffer;
+    std::array<int, n> buffer;
+    std::array<char, 4096 - sizeof(unpadded_leaf_block)> p;
 };
 
 int main () {
@@ -20,6 +27,11 @@ int main () {
     using bid_type = foxxll::BID<RawBlockSize>;
     using leaf_block_type = foxxll::typed_block<RawBlockSize, leaf_block>;
     using leaf_block_pool_type = foxxll::read_write_pool<leaf_block_type>;
+
+    std::cout << "n: " << n << std::endl;
+    std::cout << "sizeof(leaf_block): " << sizeof(leaf_block) << std::endl;
+    std::cout << "sizeof(unpadded_leaf_block): " << sizeof(unpadded_leaf_block) << std::endl;
+    std::cout << "sizeof(block):" << sizeof(leaf_block_type) << std::endl;
 
     foxxll::block_manager* bm = foxxll::block_manager::get_instance();
 
@@ -30,7 +42,7 @@ int main () {
 
     // Make mock data
     leaf_block my_data;
-    for (int i=0; i<1024; i++)
+    for (int i=0; i<n; i++)
         my_data.buffer[i] = i;
 
     // Get in-memory block, and external-memory block with bid
