@@ -34,6 +34,25 @@ double constexpr SQRT(double x)
            : std::numeric_limits<double>::quiet_NaN();
 }
 
+// Given the raw_block_size and the size that a struct with the
+// values and the nodeIDs (without buffer) would take (both in bytes),
+// calculate how many items of type value_type fit into the buffer.
+template<typename value_type, unsigned raw_block_size, unsigned size_without_buffer>
+unsigned constexpr NUM_NODE_BUFFER_ITEMS() {
+    unsigned remaining_bytes_for_buffer = raw_block_size - size_without_buffer;
+    // The struct without the buffer contains an array of ints (the nodeIDs)
+    // and an array of value_type (the values) -> it's already aligned to the
+    // bigger of the two.
+    unsigned alignment = alignof(value_type) > alignof(int) ? alignof(value_type) : alignof(int);
+    // Want to use as many of the remaining bytes, but we can only fill multiples of
+    // alignment -> find biggest multiple of alignment that's <= remaining bytes.
+    unsigned max_fillable_bytes = remaining_bytes_for_buffer - (remaining_bytes_for_buffer % alignment);
+
+    unsigned max_num_items = max_fillable_bytes / sizeof(value_type);
+    return max_num_items;
+}
+
+
 namespace stxxl {
 
 namespace fractal_tree {
@@ -84,6 +103,25 @@ std::vector<value_type> merge_into(const std::vector<value_type>& new_values, co
     return result;
 }
 
+// Set up sizes and types for the blocks used to store inner nodes' data in external memory.
+template<typename value_type, unsigned RawBlockSize>
+class node_parameters final {
+public:
+    enum {
+        max_num_values_in_node =
+        static_cast<int>(
+                SQRT(static_cast<double>(RawBlockSize / sizeof(value_type))) / 2
+        )
+    };
+    struct _node_block_without_buffer {
+        std::array<value_type, max_num_values_in_node>       value {};
+        std::array<int,        max_num_values_in_node+1>     nodeIDs {};
+    };
+
+    enum {
+        max_num_buffer_items_in_node = NUM_NODE_BUFFER_ITEMS<value_type, RawBlockSize, sizeof(_node_block_without_buffer)>(),
+    };
+};
 
 template<typename KeyType,
      typename DataType,
@@ -96,19 +134,12 @@ public:
     using value_type = std::pair<const key_type, data_type>;
     using self_type = node<KeyType, DataType, RawBlockSize>;
     using bid_type = foxxll::BID<RawBlockSize>;
+    using node_parameter_type = node_parameters<value_type, RawBlockSize>;
 
 public:
-    // Set up sizes and types for the blocks used to store inner nodes' data in external memory.
     enum {
-        max_num_values_in_node =
-            static_cast<int>(
-                SQRT(static_cast<double>(RawBlockSize / sizeof(value_type))) / 2
-            ),
-        // -21 to account for maximum possible padding of 7 bytes each for
-        // the 3 struct node_block members
-        max_num_buffer_items_in_node =
-                (RawBlockSize - 21 - ((sizeof(KeyType) + sizeof(DataType) + sizeof(int)) * max_num_values_in_node)) /
-                (sizeof(KeyType) + sizeof(DataType)),
+        max_num_values_in_node = node_parameter_type::max_num_values_in_node,
+        max_num_buffer_items_in_node = node_parameter_type::max_num_buffer_items_in_node,
         buffer_mid = (max_num_buffer_items_in_node - 1) / 2,
         values_mid = (max_num_values_in_node - 1) / 2
     };
@@ -118,7 +149,7 @@ public:
     // This is how the data of the inner nodes will be stored in a block.
     struct node_block {
         std::array<value_type, max_num_buffer_items_in_node> buffer {};
-        std::array<value_type, max_num_values_in_node>       value {};
+        std::array<value_type, max_num_values_in_node>       values {};
         std::array<int,        max_num_values_in_node+1>     nodeIDs {};
     };
     using block_type = foxxll::typed_block<RawBlockSize, node_block>;

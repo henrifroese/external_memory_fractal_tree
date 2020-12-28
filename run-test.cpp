@@ -27,13 +27,12 @@ struct leaf_block {
 
 struct A {
     std::array<char, 5> y {};
-    std::array<double, 1> z {};
-    std::array<int, 10> x {};
 };
 
 struct B {
-    std::array<std::array<double,2>, 5> a {};
-    std::array<std::array<char,2>, 7> b {};
+    std::array<int, 10> z {};
+    std::array<char, 5> y {};
+    std::array<char, 5> y2 {};
 };
 
 int main () {
