@@ -65,7 +65,7 @@ class fractal_tree {
         num_blocks_in_node_cache = (RawMemoryPoolSize / 2) / RawBlockSize - 1
     };
     static_assert(num_blocks_in_leaf_cache >= 2, "RawMemoryPoolSize too small -> less than 2 leaves fit in leaf cache!");
-    static_assert(num_blocks_in_leaf_cache >= 2, "RawMemoryPoolSize too small -> less than 2 nodes fit in node cache!");
+    static_assert(num_blocks_in_node_cache >= 2, "RawMemoryPoolSize too small -> less than 2 nodes fit in node cache!");
 
     struct bid_hash {
         size_t operator () (const bid_type& bid) const {
@@ -106,6 +106,10 @@ public:
 
         TLX_LOG << "sizeof(KeyType):\t" << sizeof(KeyType) << "\tBytes";
         TLX_LOG << "sizeof(DataType):\t" << sizeof(DataType) << "\tBytes";
+        TLX_LOG << "sizeof(node_block_type):\t" << sizeof(node_block_type) << "\tBytes";
+        TLX_LOG << "sizeof(leaf_block_type):\t" << sizeof(leaf_block_type) << "\tBytes";
+        TLX_LOG << "sizeof(actual node block):\t" << sizeof(typename node_type::node_block) << "\tBytes";
+        TLX_LOG << "sizeof(actual leaf block):\t" << sizeof(typename leaf_type::leaf_block) << "\tBytes";
         TLX_LOG << "RawBlockSize:\t" << RawBlockSize << "\tBytes";
         TLX_LOG << "RawMemoryPoolSize:\t" << RawMemoryPoolSize << "\tBytes";
         TLX_LOG << "Max number of buffer items per node:\t" << max_num_buffer_items_in_node;
