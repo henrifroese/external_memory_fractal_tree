@@ -25,10 +25,26 @@ class fractal_tree_cache {
     using bid_block_pair_type = std::pair<bid_type, block_type*>;
     using cache_list_iterator_type = typename std::list<bid_block_pair_type>::iterator;
 
+private:
+    std::list<block_type*> m_unused_blocks;
+    std::list<bid_block_pair_type> m_cache_list;
+
+    std::unordered_map<bid_type, cache_list_iterator_type, bid_hash> m_cache_map;
+    std::unordered_set<bid_type, bid_hash>& m_dirty_bids;
+
 public:
     explicit fractal_tree_cache(std::unordered_set<bid_type, bid_hash>& dirty_bids) : m_dirty_bids(dirty_bids) {
-        for (size_t i = 0; i < max_num_blocks_in_cache; i++)
-            m_unused_blocks.push_back(new block_type);
+        for (size_t i = 0; i < max_num_blocks_in_cache; i++) {
+            auto* block = new block_type;
+            // Valgrind warns that we're writing to uninitialized bytes
+            // when the struct we use inside the block_type does not
+            // fill a full block, so we explicitly set the whole region to
+            // 0 here to prevent this
+            // (this is the same as setting the FOXXLL_WITH_VALGRIND
+            // flag to true in typed_block.hpp)
+            memset(block, 0, sizeof(block_type));
+            m_unused_blocks.push_back(block);
+        }
     }
 
     ~fractal_tree_cache() {
@@ -45,8 +61,8 @@ public:
     // Evict least recently used item.
     void evict() {
         // Get least recently used bid and block.
-        auto lru_it = m_cache_list.back();
-        bid_type lru_bid = lru_it->first;
+        bid_block_pair_type lru_item = m_cache_list.back();
+        bid_type lru_bid = lru_item.first;
         kick(lru_bid);
     }
 
@@ -118,12 +134,6 @@ public:
         return m_dirty_bids.find(bid) != m_dirty_bids.end();
     }
 
-private:
-    std::list<block_type*> m_unused_blocks;
-    std::list<bid_block_pair_type> m_cache_list;
-
-    std::unordered_map<bid_type, cache_list_iterator_type, bid_hash> m_cache_map;
-    std::unordered_set<bid_type, bid_hash>& m_dirty_bids;
 };
 
 

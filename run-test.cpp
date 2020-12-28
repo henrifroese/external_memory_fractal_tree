@@ -10,18 +10,40 @@
 #include <stxxl/bits/containers/pager.h>
 
 
-constexpr unsigned n = 1024;
+constexpr unsigned n = 490;
 
 struct unpadded_leaf_block {
     std::array<int, n> buffer;
 };
 
 struct leaf_block {
-    std::array<int, n> buffer;
-    std::array<char, 4096 - sizeof(unpadded_leaf_block)> p;
+    std::array<int, n> buffer {};
+    std::array<char, 491> b2 {};
+    std::array<int, 4> b3 {};
+    //std::array<uint8_t, 4096 - sizeof(unpadded_leaf_block)> p;
+};
+
+// Baue struct ohne buffer, hole sizeof und alignof -> weiß wie viele buffer items reinpassen!
+
+struct A {
+    std::array<char, 5> y {};
+    std::array<double, 1> z {};
+    std::array<int, 10> x {};
+};
+
+struct B {
+    std::array<std::array<double,2>, 5> a {};
+    std::array<std::array<char,2>, 7> b {};
 };
 
 int main () {
+
+    std::cout << "sizeof(A):" << sizeof(A) << std::endl;
+    std::cout << "alignof(A):" << alignof(A) << std::endl;
+    std::cout << "sizeof(B):" << sizeof(B) << std::endl;
+    std::cout << "alignof(B):" << alignof(B) << std::endl;
+
+
 
     const unsigned int RawBlockSize = 4096;
     using bid_type = foxxll::BID<RawBlockSize>;
@@ -29,8 +51,8 @@ int main () {
     using leaf_block_pool_type = foxxll::read_write_pool<leaf_block_type>;
 
     std::cout << "n: " << n << std::endl;
-    std::cout << "sizeof(leaf_block): " << sizeof(leaf_block) << std::endl;
     std::cout << "sizeof(unpadded_leaf_block): " << sizeof(unpadded_leaf_block) << std::endl;
+    std::cout << "sizeof(leaf_block): " << sizeof(leaf_block) << std::endl;
     std::cout << "sizeof(block):" << sizeof(leaf_block_type) << std::endl;
 
     foxxll::block_manager* bm = foxxll::block_manager::get_instance();
@@ -47,6 +69,7 @@ int main () {
 
     // Get in-memory block, and external-memory block with bid
     leaf_block_type* IM_block = new leaf_block_type;
+    memset(IM_block, 0, sizeof(leaf_block_type));
     bid_type my_bid;
     bm->new_block(foxxll::default_alloc_strategy(), my_bid);
 
@@ -64,6 +87,7 @@ int main () {
 
     // Get in-memory block and read the external-memory data into it.
     leaf_block_type* IM_block2 = new leaf_block_type;
+    memset(IM_block2, 0, sizeof(leaf_block_type));
     foxxll::request_ptr r2 = IM_block2->read(my_bid);
     r2->wait();
     leaf_block my_data_again = *(IM_block2->begin());
@@ -78,7 +102,7 @@ int main () {
 
 
 
-
+    /*
     // Example with pool -------------------------------------------------------------------------------
     leaf_block_pool_type* leaf_blocks_pool = new leaf_block_pool_type(1, 1);
 
@@ -111,6 +135,7 @@ int main () {
     delete IM_block4;
 
     delete leaf_blocks_pool;
+     */
 
     return 0;
 }

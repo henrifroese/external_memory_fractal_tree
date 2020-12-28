@@ -104,8 +104,10 @@ public:
             static_cast<int>(
                 SQRT(static_cast<double>(RawBlockSize / sizeof(value_type))) / 2
             ),
+        // -21 to account for maximum possible padding of 7 bytes each for
+        // the 3 struct node_block members
         max_num_buffer_items_in_node =
-                (RawBlockSize - ((sizeof(KeyType) + sizeof(DataType) + sizeof(int)) * max_num_values_in_node)) /
+                (RawBlockSize - 21 - ((sizeof(KeyType) + sizeof(DataType) + sizeof(int)) * max_num_values_in_node)) /
                 (sizeof(KeyType) + sizeof(DataType)),
         buffer_mid = (max_num_buffer_items_in_node - 1) / 2,
         values_mid = (max_num_values_in_node - 1) / 2
@@ -115,11 +117,13 @@ public:
 
     // This is how the data of the inner nodes will be stored in a block.
     struct node_block {
-        std::array<value_type, max_num_values_in_node>       values;
-        std::array<int,        max_num_values_in_node+1>     nodeIDs;
-        std::array<value_type, max_num_buffer_items_in_node> buffer;
+        std::array<value_type, max_num_buffer_items_in_node> buffer {};
+        std::array<value_type, max_num_values_in_node>       value {};
+        std::array<int,        max_num_values_in_node+1>     nodeIDs {};
     };
     using block_type = foxxll::typed_block<RawBlockSize, node_block>;
+    static_assert(sizeof(node_block) <= sizeof(block_type), "RawBlockSize too small!");
+
     using buffer_iterator_type = typename std::array<value_type, max_num_buffer_items_in_node>::iterator;
     using values_iterator_type = typename std::array<value_type, max_num_values_in_node>::iterator;
 
@@ -501,16 +505,16 @@ class leaf final {
 public:
     // Set up sizes and types for the blocks used to store inner nodes' data in external memory.
     enum {
-        max_num_buffer_items_in_leaf = (int) (RawBlockSize / (sizeof(KeyType) + sizeof(DataType))),
+        max_num_buffer_items_in_leaf = (int) (RawBlockSize / sizeof(value_type)),
         buffer_mid = (max_num_buffer_items_in_leaf - 1) / 2,
     };
     static_assert(max_num_buffer_items_in_leaf >= 2, "RawBlockSize too small -> too few buffer items per leaf!");
 
-    // This is how the data of the leaves will be stored in a block.
     struct leaf_block {
-        std::array<std::pair<KeyType,DataType>, max_num_buffer_items_in_leaf> buffer;
+        std::array<value_type, max_num_buffer_items_in_leaf> buffer {};
     };
     using block_type = foxxll::typed_block<RawBlockSize, leaf_block>;
+    static_assert(sizeof(leaf_block) <= sizeof(block_type), "RawBlockSize too small!");
 
     static const data_type dummy_datum = data_type();
 
