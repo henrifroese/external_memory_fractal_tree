@@ -22,7 +22,6 @@ add_executable(run-fractal-tree run-fractal-tree.cpp include/fractal_tree/fracta
 add_executable(run-test run-test.cpp)
 add_executable(run-frage frage.cpp)
 add_executable(run-test-cache run-test-cache.cpp)
-add_executable(run-frage run-frage.cpp)
 target_link_libraries(run-fractal-tree ${STXXL_LIBRARIES})
 target_link_libraries(run-test ${STXXL_LIBRARIES})
 target_link_libraries(run-test-cache ${STXXL_LIBRARIES})
