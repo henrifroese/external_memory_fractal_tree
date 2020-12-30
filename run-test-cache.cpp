@@ -35,6 +35,10 @@ struct bid_hash {
     }
 };
 
+template<typename BlockType, typename BidType, typename BidHash, unsigned NumBlocksInCache>
+using fractal_tree_cache = stxxl::fractal_tree::fractal_tree_cache<BlockType, BidType, BidHash, NumBlocksInCache>;
+
+
 void test_cache_basic() {
     constexpr unsigned num_blocks_in_cache = 2;
     using cache_type = fractal_tree_cache<block_type, bid_type, bid_hash, num_blocks_in_cache>;

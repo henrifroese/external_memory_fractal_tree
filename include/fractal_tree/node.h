@@ -13,54 +13,15 @@
 #include <limits>
 
 
-/*
-* Constexpr version of the square root,
-* from https://gist.github.com/alexshtf/eb5128b3e3e143187794
-* Return value:
-*	- For a finite and non-negative value of "x", returns an approximation for the square root of "x"
-*   - Otherwise, returns NaN
-*/
-double constexpr sqrtNewtonRaphson(double x, double curr, double prev)
-{
-    return curr == prev
-           ? curr
-           : sqrtNewtonRaphson(x, 0.5 * (curr + x / curr), curr);
-}
-
-double constexpr SQRT(double x)
-{
-    return x >= 0 && x < std::numeric_limits<double>::infinity()
-           ? sqrtNewtonRaphson(x, x, 0)
-           : std::numeric_limits<double>::quiet_NaN();
-}
-
-// Given the raw_block_size and the size that a struct with the
-// values and the nodeIDs (without buffer) would take (both in bytes),
-// calculate how many items of type value_type fit into the buffer.
-template<typename value_type, unsigned raw_block_size, unsigned size_without_buffer>
-unsigned constexpr NUM_NODE_BUFFER_ITEMS() {
-    unsigned remaining_bytes_for_buffer = raw_block_size - size_without_buffer;
-    // The struct without the buffer contains an array of ints (the nodeIDs)
-    // and an array of value_type (the values) -> it's already aligned to the
-    // bigger of the two.
-    unsigned alignment = alignof(value_type) > alignof(int) ? alignof(value_type) : alignof(int);
-    // Want to use as many of the remaining bytes, but we can only fill multiples of
-    // alignment -> find biggest multiple of alignment that's <= remaining bytes.
-    unsigned max_fillable_bytes = remaining_bytes_for_buffer - (remaining_bytes_for_buffer % alignment);
-
-    unsigned max_num_items = max_fillable_bytes / sizeof(value_type);
-    return max_num_items;
-}
-
-
 namespace stxxl {
 
 namespace fractal_tree {
 
+// ----------------------- Free functions to use for nodes and leaves. ---------------------------
 
-// Free functions to use for nodes and leaves.
-
-// Merge sorted vectors, and take from new_values in case of duplicates
+// Merge sorted vectors new_values and current_values,
+// and take from new_values in case of duplicates.
+// Vectors need to be sorted by new_values.first
 template<typename value_type>
 std::vector<value_type> merge_into(const std::vector<value_type>& new_values, const std::vector<value_type>& current_values) {
 
@@ -103,6 +64,47 @@ std::vector<value_type> merge_into(const std::vector<value_type>& new_values, co
     return result;
 }
 
+// ----------------------- Constexpr calculations for node and leaf parameters. ---------------------------
+
+/*
+* Constexpr version of the square root,
+* from https://gist.github.com/alexshtf/eb5128b3e3e143187794
+* Return value:
+*	- For a finite and non-negative value of "x", returns an approximation for the square root of "x"
+*   - Otherwise, returns NaN
+*/
+double constexpr sqrtNewtonRaphson(double x, double curr, double prev)
+{
+    return curr == prev
+           ? curr
+           : sqrtNewtonRaphson(x, 0.5 * (curr + x / curr), curr);
+}
+
+double constexpr SQRT(double x)
+{
+    return x >= 0 && x < std::numeric_limits<double>::infinity()
+           ? sqrtNewtonRaphson(x, x, 0)
+           : std::numeric_limits<double>::quiet_NaN();
+}
+
+// Given the raw_block_size and the size that a struct with the
+// values and the nodeIDs (without buffer) would take (both in bytes),
+// calculate how many items of type value_type fit into the buffer.
+template<typename value_type, unsigned raw_block_size, unsigned size_without_buffer>
+unsigned constexpr NUM_NODE_BUFFER_ITEMS() {
+    unsigned remaining_bytes_for_buffer = raw_block_size - size_without_buffer;
+    // The struct without the buffer contains an array of ints (the nodeIDs)
+    // and an array of value_type (the values) -> it's already aligned to the
+    // bigger of the two.
+    unsigned alignment = alignof(value_type) > alignof(int) ? alignof(value_type) : alignof(int);
+    // Want to use as many of the remaining bytes, but we can only fill multiples of
+    // alignment -> find biggest multiple of alignment that's <= remaining bytes.
+    unsigned max_fillable_bytes = remaining_bytes_for_buffer - (remaining_bytes_for_buffer % alignment);
+
+    unsigned max_num_items = max_fillable_bytes / sizeof(value_type);
+    return max_num_items;
+}
+
 // Set up sizes and types for the blocks used to store inner nodes' data in external memory.
 template<typename value_type, unsigned RawBlockSize>
 class node_parameters final {
@@ -123,6 +125,8 @@ public:
     };
 };
 
+// ----------------------- Node and Leaf classes. ---------------------------
+
 template<typename KeyType,
      typename DataType,
      unsigned RawBlockSize>
@@ -131,7 +135,7 @@ public:
     // Basic type declarations
     using key_type = KeyType;
     using data_type = DataType;
-    using value_type = std::pair<const key_type, data_type>;
+    using value_type = std::pair<key_type, data_type>;
     using self_type = node<KeyType, DataType, RawBlockSize>;
     using bid_type = foxxll::BID<RawBlockSize>;
     using node_parameter_type = node_parameters<value_type, RawBlockSize>;
@@ -140,8 +144,6 @@ public:
     enum {
         max_num_values_in_node = node_parameter_type::max_num_values_in_node,
         max_num_buffer_items_in_node = node_parameter_type::max_num_buffer_items_in_node,
-        buffer_mid = (max_num_buffer_items_in_node - 1) / 2,
-        values_mid = (max_num_values_in_node - 1) / 2
     };
     static_assert(max_num_values_in_node >= 3, "RawBlockSize too small -> too few values per node!");
     static_assert(max_num_buffer_items_in_node >= 2, "RawBlockSize too small -> too few buffer items per node!");
@@ -158,7 +160,7 @@ public:
     using buffer_iterator_type = typename std::array<value_type, max_num_buffer_items_in_node>::iterator;
     using values_iterator_type = typename std::array<value_type, max_num_values_in_node>::iterator;
 
-    static const data_type dummy_datum = data_type();
+    static constexpr data_type dummy_datum() { return data_type(); };
 
 private:
     const int m_id;
@@ -192,7 +194,7 @@ public:
     }
 
     int num_children() const {
-        return m_num_values + 1;
+        return m_num_values == 0 ? 0 : m_num_values + 1;
     }
 
     int num_values() const {
@@ -232,13 +234,21 @@ public:
         m_buffer = &(m_block->begin()->buffer);
     }
 
+    void clear() {
+        clear_buffer();
+        clear_values();
+    }
+
 
     // ---------------- Methods for the buffer ----------------
 
 
     // Given the index of a child, return the index of the first
     // buffer item that does not belong to that child anymore.
+    // Precondition: number of children > 0.
     int index_of_upper_bound_of_buffer(int child_index) const {
+        assert(m_num_values > 0);
+        assert(child_index < m_num_values + 1);
         if (child_index == m_num_values)
             // at last child -> return max index of buffer + 1
             return m_num_buffer_items;
@@ -261,19 +271,21 @@ public:
         return std::vector<value_type>(m_buffer->begin(), m_buffer->begin()+m_num_buffer_items);
     }
 
-    // Return vector of items in buffer with indexes in [low, high)
+    // Return vector of items in buffer with indexes in [low, high).
+    // Precondition: buffer has at least "high" many items.
     std::vector<value_type> get_buffer_items(int low, int high) const {
+        assert(low <= high);
+        assert(m_num_buffer_items >= high);
         return std::vector<value_type>(m_buffer->begin() + low, m_buffer->begin() + high);
     }
 
-    std::vector<value_type> get_left_half_buffer_items() const {
-        return std::vector<value_type>(m_buffer->begin(), m_buffer->begin()+buffer_mid);
+    value_type get_buffer_item(int index) const {
+        assert(index < m_num_buffer_items);
+        return m_buffer->at(index);
     }
 
-    std::vector<value_type> get_right_half_buffer_items() const {
-        return std::vector<value_type>(m_buffer->begin()+buffer_mid+1, m_buffer->end());
-    }
-
+    // Given a value_type bound, return a vector of all
+    // buffer items whose key is smaller than bound.first
     std::vector<value_type> get_buffer_items_less_than(value_type bound) const {
         auto it = std::lower_bound(
                 m_buffer->begin(),
@@ -296,17 +308,15 @@ public:
         return std::vector<value_type>(it, m_buffer->begin()+m_num_buffer_items);
     }
 
-    value_type get_mid_buffer_item() const {
-        return m_buffer->at(buffer_mid);
-    }
-
     void clear_buffer() {
         m_num_buffer_items = 0;
     }
 
-    void set_buffer(const std::vector<value_type>& values) {
-        std::move(values.begin(), values.last(), m_buffer->begin());
-        m_num_buffer_items = values.size();
+    // First clear buffer, then add values to buffer.
+    void set_buffer(std::vector<value_type>& values) {
+        assert(values.size() <= max_num_buffer_items_in_node);
+        clear_buffer();
+        add_to_buffer(values);
     }
 
     // Add the new value to the buffer. In case of a duplicate
@@ -345,21 +355,25 @@ public:
         // 2.
         std::vector<value_type> buffer_values = std::vector<value_type>(m_buffer->begin(), m_buffer->begin()+m_num_buffer_items);
 
-        // Merge, and take from values in case of duplicates
-        assert(new_values.size() + buffer_values.size() <= max_num_buffer_items_in_node);
+        // Merge, and take from new_values in case of duplicates
         std::vector<value_type> new_buffer_values = merge_into<value_type>(new_values, buffer_values);
+        assert(new_buffer_values.size() <= max_num_buffer_items_in_node);
 
         // Replace buffer with new buffer values
-        std::move(new_buffer_values.begin(), new_buffer_values.end(), m_buffer->begin());
         m_num_buffer_items = new_buffer_values.size();
+        std::move(new_buffer_values.begin(), new_buffer_values.end(), m_buffer->begin());
     }
 
+    // Given a key, search for an item that has that key in the
+    // buffer. If such an item is found, return a pair
+    // <datum of the item, true>. Else, return a pair
+    // <some datum, false>.
     std::pair<data_type, bool> buffer_find(const key_type& key) const {
         // Binary search for key
         auto it = std::lower_bound(
                 m_buffer->begin(),
                 m_buffer->begin() + m_num_buffer_items,
-                value_type (key, dummy_datum),
+                value_type (key, dummy_datum()),
                 [](const value_type& val1, const value_type& val2)->bool {return val1.first < val2.first;}
                 );
 
@@ -369,7 +383,7 @@ public:
         if (found)
             return std::pair<data_type, bool>(it->second, true);
         else
-            return std::pair<data_type, bool>(dummy_datum, false);
+            return std::pair<data_type, bool>(dummy_datum(), false);
     }
 
 
@@ -379,30 +393,45 @@ public:
         m_num_values = 0;
     }
 
-    void set_values(std::vector<value_type>& values, std::vector<int>& nodeIDs) {
-        std::move(values.begin(), values.last(), m_values->begin());
-        std::move(nodeIDs.begin(), nodeIDs.end(), m_nodeIDs->begin());
+    std::vector<value_type> get_values() const {
+        return std::vector<value_type>(m_values->begin(), m_values->begin()+m_num_values);
+    }
+
+    // Return vector of values with indexes in [low, high).
+    // Precondition: values has at least "high" many items.
+    std::vector<value_type> get_values(int low, int high) const {
+        assert(low <= high);
+        assert(m_num_values >= high);
+        return std::vector<value_type>(m_values->begin() + low, m_values->begin() + high);
+    }
+
+    value_type get_value(int index) const {
+        assert(m_num_values > index);
+        return m_values->at(index);
+    }
+
+    // Return vector of nodeIDs with indexes in [low, high).
+    // Precondition: nodeIDs has at least "high" many items.
+    std::vector<int> get_nodeIDs(int low, int high) const {
+        assert(low <= high);
+        assert(num_children() >= high);
+        return std::vector<int>(m_nodeIDs->begin() + low, m_nodeIDs->begin() + high);
+    }
+
+    // Set values and nodeIDs to given vectors.
+    // This clears the whole buffer, values, and nodeIDs before
+    // setting the new values and nodeIDs, and should thus
+    // only be used on a new node.
+    // To add a value and nodeIDs to a node that's in-use
+    // already, use the function add_to_values.
+    void set_values_and_nodeIDs(std::vector<value_type>& values, std::vector<int>& nodeIDs) {
+        assert(nodeIDs.size() == values.size() + 1);
+        assert(values.size() <= max_num_values_in_node);
+        clear();
+        assert(buffer_empty()); // Not checking for duplicates -> precondition: buffer needs to be empty.
         m_num_values = values.size();
-    }
-
-    std::vector<value_type> get_left_half_values() const {
-        int mid = (m_num_values - 1) / 2;
-        return std::vector<value_type>(m_values->begin(), m_values->begin()+mid);
-    }
-
-    std::vector<value_type> get_right_half_values() const {
-        int mid = (m_num_values - 1) / 2;
-        return std::vector<value_type>(m_values->begin()+mid, m_values->begin() + m_num_values);
-    }
-
-    std::vector<int> get_left_half_nodeIDs() const {
-        int mid = (m_num_values - 1) / 2;
-        return std::vector<int>(m_nodeIDs->begin(), m_nodeIDs->begin()+mid+1);
-    }
-
-    std::vector<int> get_right_half_nodeIDs() const {
-        int mid = (m_num_values - 1) / 2;
-        return std::vector<int>(m_nodeIDs->begin()+mid+1, m_nodeIDs->begin()+m_num_values+1);
+        std::move(values.begin(), values.end(), m_values->begin());
+        std::move(nodeIDs.begin(), nodeIDs.end(), m_nodeIDs->begin());
     }
 
     // Given new_values that should be inserted to the buffer, replace duplicate keys
@@ -410,29 +439,46 @@ public:
     // values.
     std::vector<value_type> update_duplicate_values(const std::vector<value_type>& new_values) {
         std::vector<value_type> remaining_new_values;
+        remaining_new_values.reserve(new_values.size());
 
         auto it_new_values = new_values.begin();
         auto it_current_values = m_values->begin();
 
-        while ((it_new_values != new_values.end()) && (it_current_values != m_values->end())) {
+        // Walk through the two sorted lists, and for all duplicate keys,
+        // replace the datum in m_values with the new datum from
+        // new_values.
+        while ((it_new_values != new_values.end()) && (it_current_values != m_values->begin() + m_num_values)) {
             // Compare by key
-            if (it_new_values->first == it_current_values->first) {
-                // Duplicate found -> take data from new_values
-                it_current_values->second = it_new_values->second;
-                it_current_values++;
-                it_new_values++;
-            } else {
+            if (it_new_values->first < it_current_values->first) {
                 // No duplicate -> still want to insert the new value into the buffer
-                remaining_new_values.push_back(*it_current_values);
+                remaining_new_values.push_back(*it_new_values);
+                it_new_values++;
+                continue;
             }
+            if (it_new_values->first > it_current_values->first) {
+                it_current_values++;
+                continue;
+            }
+            // Keys equal -> duplicate found -> take data from new_values.
+            it_current_values->second = it_new_values->second;
+            it_current_values++;
+            it_new_values++;
+        }
+        // Insert remaining elements
+        if (it_new_values != new_values.end()) {
+            std::move(it_new_values, new_values.end(), std::back_inserter(remaining_new_values));
         }
 
         return remaining_new_values;
     }
 
     // Add value to the node's values, and add the corresponding children to
-    // the node's nodeIDs
+    // the node's nodeIDs.
+    // Precondition: the key of value is neither in the buffer nor in
+    // the values before insertion.
+    // Precondition: there is still space in the values, i.e. num_values() < max_num_values_in_node
     void add_to_values(value_type value, const int left_child_id, const int right_child_id) {
+        assert(num_values() < max_num_values_in_node);
         /*
          * Pseudocode:
          * 1. insert value into values of node
@@ -451,7 +497,7 @@ public:
         );
         // Shift all values [position to insert, last position] one to the right
         // to make space for the new value.
-        for (auto it = m_values->begin() + m_num_buffer_items; it != insert_position_it; it--) {
+        for (auto it = m_values->begin() + m_num_values; it != insert_position_it; it--) {
             *it = *(it-1);
         }
         // Insert new value
@@ -475,12 +521,14 @@ public:
 
     // Find key in values array. Return type:
     // < <datum of key if found else dummy_datum, id of child to go to>, bool whether key was found >
+    // Precondition: num_values() > 0
     std::pair<std::pair<data_type, int>, bool> values_find(const key_type& key) const {
+        assert(num_values() > 0);
         // Binary search for key
         auto it = std::lower_bound(
                 m_values->begin(),
                 m_values->begin() + m_num_values,
-                value_type (key, dummy_datum),
+                value_type (key, dummy_datum()),
                 [](const value_type& val1, const value_type& val2)->bool {return val1.first < val2.first;}
         );
 
@@ -496,10 +544,11 @@ public:
             // First key that's >= what we're looking for is
             // at index i -> want to go to i'th child next.
             int index_of_upper_bound_key = it - m_values->begin();
-            int id_of_child_to_go_to = m_nodeIDs[index_of_upper_bound_key];
+            assert(index_of_upper_bound_key < num_children());
+            int id_of_child_to_go_to = (*m_nodeIDs)[index_of_upper_bound_key];
 
             return std::pair<std::pair<data_type, int>, bool>(
-                    std::pair<data_type, int>(dummy_datum,id_of_child_to_go_to),
+                    std::pair<data_type, int>(dummy_datum(),id_of_child_to_go_to),
                     false
             );
         }
@@ -529,7 +578,7 @@ class leaf final {
     // Type declarations
     using key_type = KeyType;
     using data_type = DataType;
-    using value_type = std::pair<const key_type, data_type>;
+    using value_type = std::pair<key_type, data_type>;
     using self_type = leaf<KeyType, DataType, RawBlockSize>;
     using bid_type = foxxll::BID<RawBlockSize>;
 
@@ -537,7 +586,6 @@ public:
     // Set up sizes and types for the blocks used to store inner nodes' data in external memory.
     enum {
         max_num_buffer_items_in_leaf = (int) (RawBlockSize / sizeof(value_type)),
-        buffer_mid = (max_num_buffer_items_in_leaf - 1) / 2,
     };
     static_assert(max_num_buffer_items_in_leaf >= 2, "RawBlockSize too small -> too few buffer items per leaf!");
 
@@ -547,7 +595,7 @@ public:
     using block_type = foxxll::typed_block<RawBlockSize, leaf_block>;
     static_assert(sizeof(leaf_block) <= sizeof(block_type), "RawBlockSize too small!");
 
-    static const data_type dummy_datum = data_type();
+    static constexpr data_type dummy_datum() { return data_type(); };
 
 private:
     const int m_id;
@@ -570,10 +618,18 @@ public:
 
     void set_block(block_type* block) {
         m_block = block;
-        m_buffer = m_block->begin()->buffer;
+        m_buffer = &(m_block->begin()->buffer);
     }
 
-    int num_buffer_items() const {
+    bool buffer_empty() const {
+        return m_num_buffer_items == 0;
+    }
+
+    bool buffer_full() const {
+        return m_num_buffer_items == max_num_buffer_items_in_leaf;
+    }
+
+    int num_items_in_buffer() const {
         return m_num_buffer_items;
     }
 
@@ -583,6 +639,21 @@ public:
 
     void clear_buffer() {
         m_num_buffer_items = 0;
+    }
+
+    std::vector<value_type> get_buffer_items() const {
+        return std::vector<value_type>(m_buffer->begin(), m_buffer->begin()+m_num_buffer_items);
+    }
+
+    // Set the buffer to new_values.
+    // The buffer will be cleared before the
+    // new values are inserted.
+    void set_buffer(std::vector<value_type>& new_values) {
+        assert(new_values.size() <= max_num_buffer_items_in_leaf);
+
+        clear_buffer();
+        m_num_buffer_items = new_values.size();
+        std::move(new_values.begin(), new_values.end(), m_buffer->begin());
     }
 
     // Add the new values to the buffer. In case of duplicate keys,
@@ -596,20 +667,24 @@ public:
         std::vector<value_type> buffer_values = std::vector<value_type>(m_buffer->begin(), m_buffer->begin()+m_num_buffer_items);
 
         // Merge, and take from values in case of duplicates
-        assert(new_values.size() + buffer_values.size() <= max_num_buffer_items_in_leaf);
         std::vector<value_type> new_buffer_values = merge_into<value_type>(new_values, buffer_values);
+        assert(new_buffer_values.size() <= max_num_buffer_items_in_leaf);
 
         // Replace buffer with new buffer values
-        std::move(new_buffer_values.begin(), new_buffer_values.end(), m_buffer->begin());
         m_num_buffer_items = new_buffer_values.size();
+        std::move(new_buffer_values.begin(), new_buffer_values.end(), m_buffer->begin());
     }
 
+    // Given a key, search for an item that has that key in the
+    // buffer. If such an item is found, return a pair
+    // <datum of the item, true>. Else, return a pair
+    // <some datum, false>.
     std::pair<data_type, bool> buffer_find(const key_type& key) const {
         // Binary search for key
         auto it = std::lower_bound(
                 m_buffer->begin(),
                 m_buffer->begin() + m_num_buffer_items,
-                value_type (key, dummy_datum),
+                value_type (key, dummy_datum()),
                 [](const value_type& val1, const value_type& val2)->bool {return val1.first < val2.first;}
         );
 
@@ -619,7 +694,7 @@ public:
         if (found)
             return std::pair<data_type, bool>(it->second, true);
         else
-            return std::pair<data_type, bool>(dummy_datum, false);
+            return std::pair<data_type, bool>(dummy_datum(), false);
     }
 
 };

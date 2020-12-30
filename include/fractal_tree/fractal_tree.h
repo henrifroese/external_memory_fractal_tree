@@ -52,9 +52,9 @@ class fractal_tree {
         max_num_buffer_items_in_node = node_type::max_num_buffer_items_in_node,
         max_num_values_in_node = node_type::max_num_values_in_node,
         max_num_buffer_items_in_leaf = leaf_type::max_num_buffer_items_in_leaf,
-        node_buffer_mid = node_type::buffer_mid,
-        node_values_mid = node_type::values_mid,
-        leaf_buffer_mid = leaf_type::buffer_mid
+        node_buffer_mid = (max_num_buffer_items_in_node - 1) / 2,
+        node_values_mid = (max_num_values_in_node - 1) / 2,
+        leaf_buffer_mid = (max_num_buffer_items_in_leaf - 1) / 2,
     };
 
     // Caches for nodes and leaves.
@@ -77,7 +77,7 @@ class fractal_tree {
     using node_cache_type = fractal_tree_cache<node_block_type, bid_type, bid_hash, num_blocks_in_node_cache>;
     using leaf_cache_type = fractal_tree_cache<leaf_block_type, bid_type, bid_hash, num_blocks_in_leaf_cache>;
 
-    static const data_type dummy_datum = data_type();
+    static constexpr data_type dummy_datum = data_type();
 
 private:
     std::unordered_map<int, node_type*> m_node_id_to_node;
@@ -228,30 +228,41 @@ private:
          * in-memory footprint.
          */
         // Gather buffer items / values / nodeIDs to distribute to the children
-        std::vector<value_type> values_for_left_child = m_root.get_left_half_values();
-        std::vector<value_type> values_for_right_child = m_root.get_right_half_values();
-        std::vector<int> nodeIDs_for_left_child = m_root.get_left_half_nodeIDs();
-        std::vector<int> nodeIDs_for_right_child = m_root.get_right_half_nodeIDs();
+        int values_mid = (m_root.num_values() - 1) / 2;
+        int nodeIDs_mid = m_root.num_values() / 2;
 
-        value_type mid_value = m_root.get_mid_value();
-        std::vector<value_type> buffer_items_for_left_child = m_root.get_left_buffer_items_for_split(mid_value);
-        std::vector<value_type> buffer_items_for_right_child = m_root.get_right_buffer_items_for_split(mid_value);
+        std::vector<value_type> values_for_left_child = m_root.get_values(
+                0, values_mid
+        );
+        std::vector<value_type> values_for_right_child = m_root.get_values(
+                values_mid + 1, m_root.num_values()
+        );
+        std::vector<int> nodeIDs_for_left_child = m_root.get_nodeIDs(
+                0, nodeIDs_mid
+        );
+        std::vector<int> nodeIDs_for_right_child = m_root.get_nodeIDs(
+                nodeIDs_mid, m_root.num_values() + 1
+        );
+
+        value_type mid_value = m_root.get_value(values_mid);
+        std::vector<value_type> buffer_items_for_left_child = m_root.get_buffer_items_less_than(mid_value);
+        std::vector<value_type> buffer_items_for_right_child = m_root.get_buffer_items_greater_equal_than(mid_value);
 
         // Create new left child and populate it
         node_type& left_child = get_new_node();
         load(left_child);
         m_dirty_bids.insert(left_child.get_bid());
 
+        left_child.set_values_and_nodeIDs(values_for_left_child, nodeIDs_for_left_child);
         left_child.set_buffer(buffer_items_for_left_child);
-        left_child.set_values(values_for_left_child, nodeIDs_for_left_child);
 
         // Create new right child and populate it
         node_type& right_child = get_new_node();
         load(right_child);
         m_dirty_bids.insert(right_child.get_bid());
 
+        right_child.set_values_and_nodeIDs(values_for_right_child, nodeIDs_for_right_child);
         right_child.set_buffer(buffer_items_for_right_child);
-        right_child.set_values(values_for_right_child, nodeIDs_for_right_child);
 
         // Update root
         m_root.clear_buffer();
@@ -274,25 +285,51 @@ private:
         load(left_child);
         m_dirty_bids.insert(left_child.get_bid());
 
-        std::vector<value_type> values_for_left_child = m_root.get_left_half_buffer_items();
-        left_child.add_to_buffer(values_for_left_child);
+        std::vector<value_type> values_for_left_child = m_root.get_buffer_items(
+                0, node_buffer_mid
+                );
+        left_child.set_buffer(values_for_left_child);
 
         // Right child
         leaf_type& right_child = get_new_leaf();
         load(right_child);
         m_dirty_bids.insert(right_child.get_bid());
 
-        std::vector<value_type> values_for_right_child = m_root.get_right_half_buffer_items();
-        right_child.add_to_buffer(values_for_right_child);
+        std::vector<value_type> values_for_right_child = m_root.get_buffer_items(
+                node_buffer_mid+1, max_num_buffer_items_in_node
+        );
+        right_child.set_buffer(values_for_right_child);
 
         // Update root
-        value_type mid_value = m_root.get_mid_buffer_item();
+        value_type mid_value = m_root.get_buffer_item(node_buffer_mid);
         m_root.add_to_values(mid_value, left_child.get_id(), right_child.get_id());
         m_root.clear_buffer();
         m_depth++;
     }
 
-    void split(node_type& parent_node, leaf_type& left_child, int low, int high) {
+    // Combine the buffer items in left_child and from
+    // parent_node.buffer[low], ..., parent_node.buffer[high-1],
+    // and distribute them to left_child and a new right_child.
+    // left_child must be the child of parent_node.
+    // low, high are indexes s.t. parent_node.buffer[low], ..., parent_node.buffer[high-1]
+    // belong to the left_child.
+    void split_and_flush(node_type& parent_node, leaf_type& left_child, int low, int high) {
+        /*
+         * During flushing the buffer of parent_node, we want to flush
+         * parent_node.buffer[low], ..., parent_node.buffer[high-1]
+         * to left_child. However, left_child does not have enough
+         * enough space in its buffer for all the items. In that
+         * situation, this function is called. We now have
+         * the buffer items in left_child's buffer, and
+         * the ones that the parent_node wants to flush
+         * down. Those are combined, and then the left
+         * half is given to the left_child, the right
+         * half is given to a new right_child, and the
+         * mid item is promoted to
+         *
+         */
+        // Combine the sorted buffer items, and take from the parent
+        // in case of duplicates.
         std::vector<value_type> combined_values = merge_into<value_type>(
                 parent_node.get_buffer_items(low, high), left_child.get_buffer_items());
 
@@ -301,15 +338,15 @@ private:
 
         // Add to left child buffer
         left_child.clear_buffer();
-        left_child.add_to_buffer(
+        left_child.set_buffer(
                 std::vector<value_type>(
-                        combined_values.begin(), combined_values.begin() + 2
+                        combined_values.begin(), combined_values.begin() + mid
                 ));
 
         // Create new right child, add to buffer,
         leaf_type& right_child = get_new_leaf();
         load(right_child);
-        right_child.add_to_buffer(
+        right_child.set_buffer(
                 std::vector<value_type>(
                         combined_values.begin() + mid + 1, combined_values.end()
                 ));
@@ -318,7 +355,7 @@ private:
         parent_node.add_to_values(mid_value, left_child.get_id(), right_child.get_id());
     }
 
-    // Split left_child into two nodes
+    // Split left_child of parent_node into two nodes
     void split(node_type& parent_node, node_type& left_child) {
         /*
          * Pseudocode:
@@ -330,13 +367,23 @@ private:
          *    set child ids
         */
         // Gather buffer items / values / nodeIDs to distribute to the children
+        int values_mid = (left_child.num_values() - 1) / 2;
+        int nodeIDs_mid = left_child.num_values() / 2;
 
-        std::vector<value_type> values_for_left_child = left_child.get_left_half_values();
-        std::vector<value_type> values_for_right_child = left_child.get_right_half_values();
-        std::vector<int> nodeIDs_for_left_child = left_child.get_left_half_nodeIDs();
-        std::vector<int> nodeIDs_for_right_child = left_child.get_right_half_nodeIDs();
+        std::vector<value_type> values_for_left_child = left_child.get_values(
+                0, values_mid
+                );
+        std::vector<value_type> values_for_right_child = left_child.get_values(
+                values_mid + 1, left_child.num_values()
+                );
+        std::vector<int> nodeIDs_for_left_child = left_child.get_nodeIDs(
+                0, nodeIDs_mid
+                );
+        std::vector<int> nodeIDs_for_right_child = left_child.get_nodeIDs(
+                nodeIDs_mid, left_child.num_values() + 1
+        );
 
-        value_type mid_value = left_child.get_mid_value();
+        value_type mid_value = left_child.get_value(values_mid);
         std::vector<value_type> buffer_items_for_left_child = left_child.get_buffer_items_less_than(mid_value);
         std::vector<value_type> buffer_items_for_right_child = left_child.get_buffer_items_greater_equal_than(mid_value);
 
@@ -345,13 +392,13 @@ private:
         load(right_child);
         m_dirty_bids.insert(right_child.get_bid());
 
+        right_child.set_values_and_nodeIDs(values_for_right_child, nodeIDs_for_right_child);
         right_child.set_buffer(buffer_items_for_right_child);
-        right_child.set_values(values_for_right_child, nodeIDs_for_right_child);
 
         // Set values for left child
         m_dirty_bids.insert(left_child.get_bid());
+        left_child.set_values_and_nodeIDs(values_for_left_child, nodeIDs_for_left_child);
         left_child.set_buffer(buffer_items_for_left_child);
-        left_child.set_values(values_for_left_child, nodeIDs_for_left_child);
 
         // Update parent
         parent_node.add_to_values(mid_value, left_child.get_id(), right_child.get_id());
@@ -502,8 +549,8 @@ private:
 
             int num_items_to_push = high - low;
             // If pushing the items to the child would lead to an overflow ...
-            if (child.num_buffer_items() + num_items_to_push > child.max_buffer_size())
-                split(curr_node, child, low, high);
+            if (child.num_items_in_buffer() + num_items_to_push > child.max_buffer_size())
+                split_and_flush(curr_node, child, low, high);
             // Else: just push down
             else {
                 std::vector<value_type> buffer_items_to_push_down = curr_node.get_buffer_items(low, high);
