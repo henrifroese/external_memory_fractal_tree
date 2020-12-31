@@ -164,7 +164,7 @@ public:
 
 private:
     const int m_id;
-    const bid_type m_bid;
+    bid_type m_bid;
 
     int m_num_buffer_items = 0;
     int m_num_values = 0;
@@ -181,7 +181,7 @@ public:
     // ---------------- Basic methods ----------------
 
 
-    const bid_type& get_bid() const {
+    bid_type& get_bid() {
         return m_bid;
     }
 
@@ -599,7 +599,7 @@ public:
 
 private:
     const int m_id;
-    const bid_type m_bid;
+    bid_type m_bid;
     int m_num_buffer_items = 0;
     block_type* m_block = NULL;
 
@@ -608,7 +608,7 @@ private:
 public:
     explicit leaf(int ID, bid_type BID) : m_id(ID), m_bid(BID) {};
 
-    const bid_type& get_bid() const {
+    bid_type& get_bid() {
         return m_bid;
     }
 

@@ -19,8 +19,6 @@ add_subdirectory(tests)
 
 # executables
 add_executable(run-fractal-tree run-fractal-tree.cpp include/fractal_tree/fractal_tree_cache.h)
-add_executable(run-test run-test.cpp)
 
 target_link_libraries(run-fractal-tree ${STXXL_LIBRARIES})
-target_link_libraries(run-test ${STXXL_LIBRARIES})
 

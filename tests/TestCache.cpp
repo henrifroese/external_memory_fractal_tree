@@ -229,7 +229,7 @@ ASSERT_EQ(cache.num_cached_blocks(), 1);
 ASSERT_EQ(cache.num_unused_blocks(), 1);
 ASSERT_EQ(*data, data1);
 
-// Load bid1
+// Load bid2
 block_type* block_for_data2 = cache.load(bid2);
 data = &(block_for_data2->begin()->A);
 *data = data2;
