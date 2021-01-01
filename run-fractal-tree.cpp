@@ -34,12 +34,6 @@ using block_type = foxxll::typed_block<RawBlockSize, block>;
 using ftree_type = stxxl::ftree<key_type, data_type, 512, 4096>;
 
 
-void test_cache() {
-
-
-}
-
-
 int main()
 {
 

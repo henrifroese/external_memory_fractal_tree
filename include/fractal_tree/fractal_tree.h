@@ -35,7 +35,7 @@ class fractal_tree {
     // Type declarations.
     using key_type = KeyType;
     using data_type = DataType;
-    using value_type = std::pair<const key_type, data_type>;
+    using value_type = std::pair<key_type, data_type>;
 
     using self_type = fractal_tree<KeyType, DataType, RawBlockSize, RawMemoryPoolSize, AllocStr>;
     using bid_type = foxxll::BID<RawBlockSize>;
@@ -48,6 +48,7 @@ class fractal_tree {
     using node_block_type = typename node_type::block_type;
     using leaf_block_type = typename leaf_type::block_type;
 
+public:
     enum {
         max_num_buffer_items_in_node = node_type::max_num_buffer_items_in_node,
         max_num_values_in_node = node_type::max_num_values_in_node,
@@ -56,7 +57,7 @@ class fractal_tree {
         node_values_mid = (max_num_values_in_node - 1) / 2,
         leaf_buffer_mid = (max_num_buffer_items_in_leaf - 1) / 2,
     };
-
+private:
     // Caches for nodes and leaves.
     static_assert(RawMemoryPoolSize / 2 >= RawBlockSize, "RawMemoryPoolSize too small -> too few nodes fit in cache!");
     enum {
@@ -77,7 +78,7 @@ class fractal_tree {
     using node_cache_type = fractal_tree_cache<node_block_type, bid_type, bid_hash, num_blocks_in_node_cache>;
     using leaf_cache_type = fractal_tree_cache<leaf_block_type, bid_type, bid_hash, num_blocks_in_leaf_cache>;
 
-    static constexpr data_type dummy_datum = data_type();
+    static constexpr data_type dummy_datum() { return data_type(); };
 
 private:
     std::unordered_map<int, node_type*> m_node_id_to_node;
@@ -110,6 +111,10 @@ public:
         TLX_LOG << "sizeof(leaf_block_type):\t" << sizeof(leaf_block_type) << "\tBytes";
         TLX_LOG << "sizeof(actual node block):\t" << sizeof(typename node_type::node_block) << "\tBytes";
         TLX_LOG << "sizeof(actual leaf block):\t" << sizeof(typename leaf_type::leaf_block) << "\tBytes";
+        TLX_LOG << "Wasted bytes:\t" <<
+                    sizeof(node_block_type) + sizeof(leaf_block_type)
+                    - sizeof(typename node_type::node_block) - sizeof(typename leaf_type::leaf_block)
+                    << "\tBytes";
         TLX_LOG << "RawBlockSize:\t" << RawBlockSize << "\tBytes";
         TLX_LOG << "RawMemoryPoolSize:\t" << RawMemoryPoolSize << "\tBytes";
         TLX_LOG << "Max number of buffer items per node:\t" << max_num_buffer_items_in_node;
@@ -170,15 +175,16 @@ public:
                         flush_bottom_buffer(m_root);
                     else
                         flush_buffer(m_root, 1);
+                    assert(m_root.buffer_empty());
                 }
             }
         }
-        assert(m_root.buffer_empty());
+        assert(!m_root.buffer_full());
         m_root.add_to_buffer(val);
     }
 
     // First value of return is dummy if key is not found.
-    std::pair<data_type, bool> find(const key_type& key) const {
+    std::pair<data_type, bool> find(key_type key) {
         return recursive_find(m_root, key, 1);
     }
 
@@ -186,14 +192,14 @@ private:
 
     node_type& get_new_node() {
         auto* new_node = new node_type(curr_node_id++, bid_type());
-        m_node_id_to_node.insert(std::pair<int, node_type>(new_node->get_id(), new_node));
+        m_node_id_to_node.insert(std::pair<int, node_type*>(new_node->get_id(), new_node));
         bm->new_block(m_alloc_strategy, new_node->get_bid());
         return *new_node;
     }
 
     leaf_type& get_new_leaf() {
         auto* new_leaf = new leaf_type(curr_leaf_id++, bid_type());
-        m_leaf_id_to_leaf.insert(std::pair<int, node_type>(new_leaf->get_id(), new_leaf));
+        m_leaf_id_to_leaf.insert(std::pair<int, leaf_type*>(new_leaf->get_id(), new_leaf));
         bm->new_block(m_alloc_strategy, new_leaf->get_bid());
         return *new_leaf;
     }
@@ -208,7 +214,7 @@ private:
 
     void load(leaf_type& leaf) {
         bid_type& leaf_bid = leaf.get_bid();
-        leaf_block_type* cached_node_block = m_node_cache.load(leaf_bid);
+        leaf_block_type* cached_node_block = m_leaf_cache.load(leaf_bid);
         leaf.set_block(cached_node_block);
     }
 
@@ -338,18 +344,20 @@ private:
 
         // Add to left child buffer
         left_child.clear_buffer();
-        left_child.set_buffer(
+        std::vector<value_type> buffer_items_for_left_child =
                 std::vector<value_type>(
                         combined_values.begin(), combined_values.begin() + mid
-                ));
+                );
+        left_child.set_buffer(buffer_items_for_left_child);
 
         // Create new right child, add to buffer,
         leaf_type& right_child = get_new_leaf();
         load(right_child);
-        right_child.set_buffer(
+        std::vector<value_type> buffer_items_for_right_child =
                 std::vector<value_type>(
                         combined_values.begin() + mid + 1, combined_values.end()
-                ));
+                );
+        right_child.set_buffer(buffer_items_for_right_child);
 
         // Register children with parent
         parent_node.add_to_values(mid_value, left_child.get_id(), right_child.get_id());
@@ -402,7 +410,7 @@ private:
 
         // Update parent
         parent_node.add_to_values(mid_value, left_child.get_id(), right_child.get_id());
-        m_dirty_bids.insert(parent_node);
+        m_dirty_bids.insert(parent_node.get_bid());
     }
 
     // Flush the items in a node's full buffer to the node's children
@@ -475,7 +483,9 @@ private:
         int child_index = 0;
 
         while (child_index < num_children) {
-            node_type& child = *m_node_id_to_node.find(curr_node.get_child_id(child_index));
+            auto it = m_node_id_to_node.find(curr_node.get_child_id(child_index));
+            assert(it != m_node_id_to_node.end());
+            node_type& child = *(it->second);
             load(child);
 
             if (child.values_at_least_half_full())
@@ -499,7 +509,7 @@ private:
                             );
                     child.add_to_buffer(items_to_push);
                 }
-                m_dirty_bids.add(child.get_bid());
+                m_dirty_bids.insert(child.get_bid());
                 // Flush child buffer.
                 if (curr_depth == m_depth - 1)
                     flush_bottom_buffer(child);
@@ -517,12 +527,12 @@ private:
                     );
                     child.add_to_buffer(items_to_push);
                 }
-                m_dirty_bids.add(child.get_bid());
+                m_dirty_bids.insert(child.get_bid());
 
             } else {
                 std::vector<value_type> items_to_push = curr_node.get_buffer_items(low, high);
                 child.add_to_buffer(items_to_push);
-                m_dirty_bids.add(child.get_bid());
+                m_dirty_bids.insert(child.get_bid());
             }
 
             child_index++;
@@ -530,7 +540,7 @@ private:
             num_children = curr_node.num_children();
         }
         curr_node.clear_buffer();
-        m_dirty_bids.add(curr_node.get_bid());
+        m_dirty_bids.insert(curr_node.get_bid());
     }
 
     // See flush_buffer
@@ -541,7 +551,9 @@ private:
         int child_index = 0;
 
         while (child_index < num_children) {
-            leaf_type& child = *m_leaf_id_to_leaf.find(curr_node.get_child_id(child_index));
+            auto it = m_leaf_id_to_leaf.find(curr_node.get_child_id(child_index));
+            assert(it != m_leaf_id_to_leaf.end());
+            leaf_type& child = *(it->second);
             load(child);
 
             low = high;
@@ -555,7 +567,7 @@ private:
             else {
                 std::vector<value_type> buffer_items_to_push_down = curr_node.get_buffer_items(low, high);
                 child.add_to_buffer(buffer_items_to_push_down);
-                m_dirty_bids.add(child.get_bid());
+                m_dirty_bids.insert(child.get_bid());
             }
 
             child_index++;
@@ -563,10 +575,10 @@ private:
             num_children = curr_node.num_children();
         }
         curr_node.clear_buffer();
-        m_dirty_bids.add(curr_node.get_bid());
+        m_dirty_bids.insert(curr_node.get_bid());
     }
 
-    std::pair<data_type, bool> recursive_find(const node_type& curr_node, const key_type& key, int curr_depth) const {
+    std::pair<data_type, bool> recursive_find(node_type& curr_node, key_type& key, int curr_depth) {
         /*
          * Pseudocode of function:
          *
@@ -592,7 +604,7 @@ private:
         // Case: currently only have root
         if (m_depth == 1) {
             assert(curr_node == m_root);
-            return std::pair<data_type, bool> (dummy_datum, false);
+            return std::pair<data_type, bool> (dummy_datum(), false);
         }
 
         // Search in values
@@ -608,14 +620,18 @@ private:
         int child_id = maybe_datum_and_child_and_found_in_values.first.second;
 
         // Child is leaf
-        if (curr_depth == m_depth - 1)
-            return leaf_find(*m_leaf_id_to_leaf.at(child_id), key);
+        if (curr_depth == m_depth - 1) {
+            auto it = m_leaf_id_to_leaf.find(curr_node.get_child_id(child_id));
+            assert(it != m_leaf_id_to_leaf.end());
+            leaf_type& child = *(it->second);
+            return leaf_find(child, key);
+        }
         // Child is inner node
         else
             return recursive_find(*m_node_id_to_node.at(child_id), key, curr_depth+1);
     }
 
-    std::pair<data_type, bool> leaf_find(leaf_type& curr_leaf, const key_type& key) const {
+    std::pair<data_type, bool> leaf_find(leaf_type& curr_leaf, key_type& key) {
         load(curr_leaf);
 
         // Search in buffer
@@ -624,7 +640,7 @@ private:
         if (maybe_datum_and_found_in_buffer.second)
             return maybe_datum_and_found_in_buffer;
         else
-            return std::pair<data_type, bool> (dummy_datum, false);
+            return std::pair<data_type, bool> (dummy_datum(), false);
     }
 
 };

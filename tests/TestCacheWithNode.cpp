@@ -3,7 +3,6 @@
 //
 
 #include <gtest/gtest.h>
-#include <tlx/die.hpp>
 #include "../include/fractal_tree/node.h"
 #include "../include/fractal_tree/fractal_tree_cache.h"
 #include "../include/fractal_tree/fractal_tree.h"

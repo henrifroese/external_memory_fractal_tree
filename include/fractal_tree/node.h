@@ -325,8 +325,10 @@ public:
         if (buffer_empty()) {
             *(m_buffer->begin()) = new_value;
             m_num_buffer_items++;
-        } else
-            add_to_buffer(std::vector<value_type> { new_value });
+        } else {
+            std::vector<value_type> v { new_value };
+            add_to_buffer(v);
+        }
     }
 
     // Add the new values to the buffer. In case of duplicate keys,
