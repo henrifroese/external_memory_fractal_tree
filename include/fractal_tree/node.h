@@ -112,7 +112,7 @@ public:
     enum {
         max_num_values_in_node =
         static_cast<int>(
-                SQRT(static_cast<double>(RawBlockSize / sizeof(value_type))) / 2
+                SQRT(static_cast<double>(RawBlockSize / sizeof(value_type)))
         )
     };
     struct _node_block_without_buffer {
@@ -220,7 +220,7 @@ public:
 
     // Check if number of keys in node is >= floor(b/2)
     bool values_at_least_half_full() const {
-        return m_num_values >= (max_num_values_in_node+1) / 2;
+        return m_num_values >= (max_num_values_in_node-1) / 2;
     }
 
     block_type* get_block() {
