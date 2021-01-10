@@ -206,6 +206,68 @@ public:
         return m_curr_leaf_id;
     }
 
+    void visualize() {
+        if (num_nodes() > 30) {
+            std::cout << "Tree is too large to visualize" << std::endl;
+            return;
+        }
+        std::cout << "VISUALIZING TREE...\n" << std::endl;
+        std::cout << "Depth: " << m_depth << std::endl;
+        std::cout << "Number of nodes: " << m_curr_node_id << std::endl;
+        std::cout << "Number of leaves: " << m_curr_leaf_id << std::endl;
+
+        std::cout << "Level-order traversal of tree:\n" << std::endl;
+
+        std::vector<int> level_ids { 0 };
+        int curr_depth = 1;
+
+        while (curr_depth <= m_depth) {
+            // Case: currently looking at inner nodes
+            if (curr_depth < m_depth) {
+                std::vector<int> next_level_ids {};
+
+                for (auto id : level_ids) {
+                    node_type n = *m_node_id_to_node.at(id);
+                    load(n);
+
+                    // Pretty-print keys, and first and last buffer item
+                    std::cout << "[ ";
+                    for (value_type val : n.get_values())
+                        std::cout << val.first << ", ";
+                    std::cout << " | ";
+                    if (!n.buffer_empty()) {
+                        std::cout << n.get_buffer_items().at(0).first << " ... ";
+                        std::cout << n.get_buffer_items().at(n.num_items_in_buffer()-1).first;
+                    }
+                    std::cout << " ]    ";
+
+                    // Add children to next level
+                    for (int i=0; i<n.num_children(); i++)
+                        next_level_ids.push_back(n.get_child_id(i));
+                }
+                level_ids = next_level_ids;
+                std::cout << std::endl;
+            }
+            // Case: currently looking at leaves
+            else {
+                for (auto id : level_ids) {
+                    leaf_type n = *m_leaf_id_to_leaf.at(id);
+                    load(n);
+
+                    // Pretty-print first and last buffer item
+                    std::cout << "[ ";
+                    std::cout << n.get_buffer_items().at(0).first << " ... ";
+                    std::cout << n.get_buffer_items().at(n.num_items_in_buffer()-1).first;
+                    std::cout << " ]    ";
+                }
+                std::cout << std::endl;
+            }
+
+            curr_depth++;
+        }
+
+    }
+
 private:
 
     node_type& get_new_node() {
@@ -522,8 +584,14 @@ private:
             node_type& child = *(it->second);
             load(child);
 
-            if (child.values_at_least_half_full())
+            if (child.values_at_least_half_full()) {
                 split(curr_node, child);
+                // After splitting, the child is now responsible
+                // for a different range of values, so we have to
+                // re-calculate what should be pushed down.
+                high = curr_node.index_of_upper_bound_of_buffer(child_index);
+                num_items_to_push = high - low;
+            }
 
             int space_in_child_buffer = child.max_buffer_size() - child.num_items_in_buffer();
 
