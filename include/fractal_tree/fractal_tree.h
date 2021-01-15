@@ -35,7 +35,7 @@ class fractal_tree {
     // Type declarations.
     using key_type = KeyType;
     using data_type = DataType;
-    using value_type = std::pair<const key_type, data_type>;
+    using value_type = std::pair<key_type, data_type>;
 
     using self_type = fractal_tree<KeyType, DataType, RawBlockSize, RawMemoryPoolSize, AllocStr>;
     using bid_type = foxxll::BID<RawBlockSize>;
@@ -48,15 +48,22 @@ class fractal_tree {
     using node_block_type = typename node_type::block_type;
     using leaf_block_type = typename leaf_type::block_type;
 
+public:
     enum {
         max_num_buffer_items_in_node = node_type::max_num_buffer_items_in_node,
         max_num_values_in_node = node_type::max_num_values_in_node,
         max_num_buffer_items_in_leaf = leaf_type::max_num_buffer_items_in_leaf,
-        node_buffer_mid = node_type::buffer_mid,
-        node_values_mid = node_type::values_mid,
-        leaf_buffer_mid = leaf_type::buffer_mid
+        node_buffer_mid = (max_num_buffer_items_in_node - 1) / 2,
+        node_values_mid = (max_num_values_in_node - 1) / 2,
+        leaf_buffer_mid = (max_num_buffer_items_in_leaf - 1) / 2,
     };
+    // We want to be able to split
+    // a node with floor((max_num_values_in_node-1)/2) values. Thus,
+    // as at least 3 values are needed to be able to split,
+    // we require max_num_values_in_nodes >= 7
+    static_assert(max_num_values_in_node >= 7, "RawBlockSize too small -> too few values per node!");
 
+private:
     // Caches for nodes and leaves.
     static_assert(RawMemoryPoolSize / 2 >= RawBlockSize, "RawMemoryPoolSize too small -> too few nodes fit in cache!");
     enum {
@@ -77,7 +84,7 @@ class fractal_tree {
     using node_cache_type = fractal_tree_cache<node_block_type, bid_type, bid_hash, num_blocks_in_node_cache>;
     using leaf_cache_type = fractal_tree_cache<leaf_block_type, bid_type, bid_hash, num_blocks_in_leaf_cache>;
 
-    static const data_type dummy_datum = data_type();
+    static constexpr data_type dummy_datum() { return data_type(); };
 
 private:
     std::unordered_map<int, node_type*> m_node_id_to_node;
@@ -88,8 +95,8 @@ private:
     node_cache_type m_node_cache = node_cache_type(m_dirty_bids);
     leaf_cache_type m_leaf_cache = leaf_cache_type(m_dirty_bids);
 
-    int curr_node_id = 0;
-    int curr_leaf_id = 0;
+    int m_curr_node_id = 0;
+    int m_curr_leaf_id = 0;
     int m_depth = 1;
 
     node_type m_root;
@@ -99,7 +106,7 @@ private:
 
 public:
     fractal_tree() :
-        m_root(curr_node_id++, bid_type()) {
+        m_root(m_curr_node_id++, bid_type()) {
         // Set up root.
         m_root.set_block(new node_block_type);
         m_node_id_to_node.insert(std::pair<int, node_type*>(m_root.get_id(), &m_root));
@@ -110,6 +117,10 @@ public:
         TLX_LOG << "sizeof(leaf_block_type):\t" << sizeof(leaf_block_type) << "\tBytes";
         TLX_LOG << "sizeof(actual node block):\t" << sizeof(typename node_type::node_block) << "\tBytes";
         TLX_LOG << "sizeof(actual leaf block):\t" << sizeof(typename leaf_type::leaf_block) << "\tBytes";
+        TLX_LOG << "Wasted bytes:\t" <<
+                    sizeof(node_block_type) + sizeof(leaf_block_type)
+                    - sizeof(typename node_type::node_block) - sizeof(typename leaf_type::leaf_block)
+                    << "\tBytes";
         TLX_LOG << "RawBlockSize:\t" << RawBlockSize << "\tBytes";
         TLX_LOG << "RawMemoryPoolSize:\t" << RawMemoryPoolSize << "\tBytes";
         TLX_LOG << "Max number of buffer items per node:\t" << max_num_buffer_items_in_node;
@@ -170,30 +181,105 @@ public:
                         flush_bottom_buffer(m_root);
                     else
                         flush_buffer(m_root, 1);
+                    assert(m_root.buffer_empty());
                 }
             }
         }
-        assert(m_root.buffer_empty());
+        assert(!m_root.buffer_full());
         m_root.add_to_buffer(val);
     }
 
     // First value of return is dummy if key is not found.
-    std::pair<data_type, bool> find(const key_type& key) const {
+    std::pair<data_type, bool> find(key_type key) {
         return recursive_find(m_root, key, 1);
+    }
+
+    int depth() const {
+        return m_depth;
+    }
+    
+    int num_nodes() const {
+        return m_curr_node_id;
+    }
+    
+    int num_leaves() const {
+        return m_curr_leaf_id;
+    }
+
+    void visualize() {
+        if (num_nodes() > 30) {
+            std::cout << "Tree is too large to visualize" << std::endl;
+            return;
+        }
+        std::cout << "VISUALIZING TREE...\n" << std::endl;
+        std::cout << "Depth: " << m_depth << std::endl;
+        std::cout << "Number of nodes: " << m_curr_node_id << std::endl;
+        std::cout << "Number of leaves: " << m_curr_leaf_id << std::endl;
+
+        std::cout << "Level-order traversal of tree:\n" << std::endl;
+
+        std::vector<int> level_ids { 0 };
+        int curr_depth = 1;
+
+        while (curr_depth <= m_depth) {
+            // Case: currently looking at inner nodes
+            if (curr_depth < m_depth) {
+                std::vector<int> next_level_ids {};
+
+                for (auto id : level_ids) {
+                    node_type n = *m_node_id_to_node.at(id);
+                    load(n);
+
+                    // Pretty-print keys, and first and last buffer item
+                    std::cout << "[ ";
+                    for (value_type val : n.get_values())
+                        std::cout << val.first << ", ";
+                    std::cout << " | ";
+                    if (!n.buffer_empty()) {
+                        std::cout << n.get_buffer_items().at(0).first << " ... ";
+                        std::cout << n.get_buffer_items().at(n.num_items_in_buffer()-1).first;
+                    }
+                    std::cout << " ]    ";
+
+                    // Add children to next level
+                    for (int i=0; i<n.num_children(); i++)
+                        next_level_ids.push_back(n.get_child_id(i));
+                }
+                level_ids = next_level_ids;
+                std::cout << std::endl;
+            }
+            // Case: currently looking at leaves
+            else {
+                for (auto id : level_ids) {
+                    leaf_type n = *m_leaf_id_to_leaf.at(id);
+                    load(n);
+
+                    // Pretty-print first and last buffer item
+                    std::cout << "[ ";
+                    std::cout << n.get_buffer_items().at(0).first << " ... ";
+                    std::cout << n.get_buffer_items().at(n.num_items_in_buffer()-1).first;
+                    std::cout << " ]    ";
+                }
+                std::cout << std::endl;
+            }
+
+            curr_depth++;
+        }
+
     }
 
 private:
 
     node_type& get_new_node() {
-        auto* new_node = new node_type(curr_node_id++, bid_type());
-        m_node_id_to_node.insert(std::pair<int, node_type>(new_node->get_id(), new_node));
+        auto* new_node = new node_type(m_curr_node_id++, bid_type());
+        m_node_id_to_node.insert(std::pair<int, node_type*>(new_node->get_id(), new_node));
         bm->new_block(m_alloc_strategy, new_node->get_bid());
         return *new_node;
     }
 
     leaf_type& get_new_leaf() {
-        auto* new_leaf = new leaf_type(curr_leaf_id++, bid_type());
-        m_leaf_id_to_leaf.insert(std::pair<int, node_type>(new_leaf->get_id(), new_leaf));
+        auto* new_leaf = new leaf_type(m_curr_leaf_id++, bid_type());
+        m_leaf_id_to_leaf.insert(std::pair<int, leaf_type*>(new_leaf->get_id(), new_leaf));
         bm->new_block(m_alloc_strategy, new_leaf->get_bid());
         return *new_leaf;
     }
@@ -208,7 +294,7 @@ private:
 
     void load(leaf_type& leaf) {
         bid_type& leaf_bid = leaf.get_bid();
-        leaf_block_type* cached_node_block = m_node_cache.load(leaf_bid);
+        leaf_block_type* cached_node_block = m_leaf_cache.load(leaf_bid);
         leaf.set_block(cached_node_block);
     }
 
@@ -228,30 +314,40 @@ private:
          * in-memory footprint.
          */
         // Gather buffer items / values / nodeIDs to distribute to the children
-        std::vector<value_type> values_for_left_child = m_root.get_left_half_values();
-        std::vector<value_type> values_for_right_child = m_root.get_right_half_values();
-        std::vector<int> nodeIDs_for_left_child = m_root.get_left_half_nodeIDs();
-        std::vector<int> nodeIDs_for_right_child = m_root.get_right_half_nodeIDs();
+        int values_mid = (m_root.num_values() - 1) / 2;
 
-        value_type mid_value = m_root.get_mid_value();
-        std::vector<value_type> buffer_items_for_left_child = m_root.get_left_buffer_items_for_split(mid_value);
-        std::vector<value_type> buffer_items_for_right_child = m_root.get_right_buffer_items_for_split(mid_value);
+        std::vector<value_type> values_for_left_child = m_root.get_values(
+                0, values_mid
+        );
+        std::vector<value_type> values_for_right_child = m_root.get_values(
+                values_mid + 1, m_root.num_values()
+        );
+        std::vector<int> nodeIDs_for_left_child = m_root.get_nodeIDs(
+                0, values_mid + 1
+        );
+        std::vector<int> nodeIDs_for_right_child = m_root.get_nodeIDs(
+                values_mid + 1, m_root.num_children()
+        );
+
+        value_type mid_value = m_root.get_value(values_mid);
+        std::vector<value_type> buffer_items_for_left_child = m_root.get_buffer_items_less_than(mid_value);
+        std::vector<value_type> buffer_items_for_right_child = m_root.get_buffer_items_greater_equal_than(mid_value);
 
         // Create new left child and populate it
         node_type& left_child = get_new_node();
         load(left_child);
         m_dirty_bids.insert(left_child.get_bid());
 
+        left_child.set_values_and_nodeIDs(values_for_left_child, nodeIDs_for_left_child);
         left_child.set_buffer(buffer_items_for_left_child);
-        left_child.set_values(values_for_left_child, nodeIDs_for_left_child);
 
         // Create new right child and populate it
         node_type& right_child = get_new_node();
         load(right_child);
         m_dirty_bids.insert(right_child.get_bid());
 
+        right_child.set_values_and_nodeIDs(values_for_right_child, nodeIDs_for_right_child);
         right_child.set_buffer(buffer_items_for_right_child);
-        right_child.set_values(values_for_right_child, nodeIDs_for_right_child);
 
         // Update root
         m_root.clear_buffer();
@@ -274,51 +370,86 @@ private:
         load(left_child);
         m_dirty_bids.insert(left_child.get_bid());
 
-        std::vector<value_type> values_for_left_child = m_root.get_left_half_buffer_items();
-        left_child.add_to_buffer(values_for_left_child);
+        std::vector<value_type> values_for_left_child = m_root.get_buffer_items(
+                0, node_buffer_mid
+                );
+        left_child.set_buffer(values_for_left_child);
 
         // Right child
         leaf_type& right_child = get_new_leaf();
         load(right_child);
         m_dirty_bids.insert(right_child.get_bid());
 
-        std::vector<value_type> values_for_right_child = m_root.get_right_half_buffer_items();
-        right_child.add_to_buffer(values_for_right_child);
+        std::vector<value_type> values_for_right_child = m_root.get_buffer_items(
+                node_buffer_mid+1, max_num_buffer_items_in_node
+        );
+        right_child.set_buffer(values_for_right_child);
 
         // Update root
-        value_type mid_value = m_root.get_mid_buffer_item();
+        value_type mid_value = m_root.get_buffer_item(node_buffer_mid);
         m_root.add_to_values(mid_value, left_child.get_id(), right_child.get_id());
         m_root.clear_buffer();
         m_depth++;
     }
 
-    void split(node_type& parent_node, leaf_type& left_child, int low, int high) {
+    // Combine the buffer items in left_child and from
+    // parent_node.buffer[low], ..., parent_node.buffer[high-1],
+    // and distribute them to left_child and a new right_child.
+    // left_child must be the child of parent_node.
+    // low, high are indexes s.t. parent_node.buffer[low], ..., parent_node.buffer[high-1]
+    // belong to the left_child.
+    void split_and_flush(node_type& parent_node, leaf_type& left_child, int low, int high) {
+        /*
+         * During flushing the buffer of parent_node, we want to flush
+         * parent_node.buffer[low], ..., parent_node.buffer[high-1]
+         * to left_child. However, left_child does not have enough
+         * enough space in its buffer for all the items. In that
+         * situation, this function is called. We now have
+         * the buffer items in left_child's buffer, and
+         * the ones that the parent_node wants to flush
+         * down. Those are combined, and then the left
+         * half is given to the left_child, the right
+         * half is given to a new right_child, and the
+         * mid item is promoted to
+         *
+         */
+        // Combine the sorted buffer items, and take from the parent
+        // in case of duplicates.
         std::vector<value_type> combined_values = merge_into<value_type>(
                 parent_node.get_buffer_items(low, high), left_child.get_buffer_items());
+
+        if (combined_values.empty())
+            return;
 
         int mid = (combined_values.size() - 1) / 2;
         value_type mid_value = combined_values.at(mid);
 
         // Add to left child buffer
         left_child.clear_buffer();
-        left_child.add_to_buffer(
+        std::vector<value_type> buffer_items_for_left_child =
                 std::vector<value_type>(
-                        combined_values.begin(), combined_values.begin() + 2
-                ));
+                        combined_values.begin(), combined_values.begin() + mid
+                );
+        left_child.set_buffer(buffer_items_for_left_child);
+        m_dirty_bids.insert(left_child.get_bid());
 
         // Create new right child, add to buffer,
         leaf_type& right_child = get_new_leaf();
         load(right_child);
-        right_child.add_to_buffer(
+        m_dirty_bids.insert(right_child.get_bid());
+
+        std::vector<value_type> buffer_items_for_right_child =
                 std::vector<value_type>(
                         combined_values.begin() + mid + 1, combined_values.end()
-                ));
+                );
+        right_child.set_buffer(buffer_items_for_right_child);
 
         // Register children with parent
         parent_node.add_to_values(mid_value, left_child.get_id(), right_child.get_id());
+        m_dirty_bids.insert(parent_node.get_bid());
     }
 
-    // Split left_child into two nodes
+    // Split left_child of parent_node into two nodes
     void split(node_type& parent_node, node_type& left_child) {
         /*
          * Pseudocode:
@@ -330,13 +461,23 @@ private:
          *    set child ids
         */
         // Gather buffer items / values / nodeIDs to distribute to the children
+        int values_mid = (left_child.num_values() - 1) / 2;
+        int nodeIDs_mid = left_child.num_values() / 2;
 
-        std::vector<value_type> values_for_left_child = left_child.get_left_half_values();
-        std::vector<value_type> values_for_right_child = left_child.get_right_half_values();
-        std::vector<int> nodeIDs_for_left_child = left_child.get_left_half_nodeIDs();
-        std::vector<int> nodeIDs_for_right_child = left_child.get_right_half_nodeIDs();
+        std::vector<value_type> values_for_left_child = left_child.get_values(
+                0, values_mid
+                );
+        std::vector<value_type> values_for_right_child = left_child.get_values(
+                values_mid + 1, left_child.num_values()
+                );
+        std::vector<int> nodeIDs_for_left_child = left_child.get_nodeIDs(
+                0, nodeIDs_mid
+                );
+        std::vector<int> nodeIDs_for_right_child = left_child.get_nodeIDs(
+                nodeIDs_mid, left_child.num_values() + 1
+        );
 
-        value_type mid_value = left_child.get_mid_value();
+        value_type mid_value = left_child.get_value(values_mid);
         std::vector<value_type> buffer_items_for_left_child = left_child.get_buffer_items_less_than(mid_value);
         std::vector<value_type> buffer_items_for_right_child = left_child.get_buffer_items_greater_equal_than(mid_value);
 
@@ -345,17 +486,17 @@ private:
         load(right_child);
         m_dirty_bids.insert(right_child.get_bid());
 
+        right_child.set_values_and_nodeIDs(values_for_right_child, nodeIDs_for_right_child);
         right_child.set_buffer(buffer_items_for_right_child);
-        right_child.set_values(values_for_right_child, nodeIDs_for_right_child);
 
         // Set values for left child
         m_dirty_bids.insert(left_child.get_bid());
+        left_child.set_values_and_nodeIDs(values_for_left_child, nodeIDs_for_left_child);
         left_child.set_buffer(buffer_items_for_left_child);
-        left_child.set_values(values_for_left_child, nodeIDs_for_left_child);
 
         // Update parent
         parent_node.add_to_values(mid_value, left_child.get_id(), right_child.get_id());
-        m_dirty_bids.insert(parent_node);
+        m_dirty_bids.insert(parent_node.get_bid());
     }
 
     // Flush the items in a node's full buffer to the node's children
@@ -428,16 +569,30 @@ private:
         int child_index = 0;
 
         while (child_index < num_children) {
-            node_type& child = *m_node_id_to_node.find(curr_node.get_child_id(child_index));
-            load(child);
-
-            if (child.values_at_least_half_full())
-                split(curr_node, child);
-
             low = high;
             high = curr_node.index_of_upper_bound_of_buffer(child_index);
 
             int num_items_to_push = high - low;
+
+            if (num_items_to_push == 0) {
+                child_index++;
+                continue;
+            }
+
+            auto it = m_node_id_to_node.find(curr_node.get_child_id(child_index));
+            assert(it != m_node_id_to_node.end());
+            node_type& child = *(it->second);
+            load(child);
+
+            if (child.values_at_least_half_full()) {
+                split(curr_node, child);
+                // After splitting, the child is now responsible
+                // for a different range of values, so we have to
+                // re-calculate what should be pushed down.
+                high = curr_node.index_of_upper_bound_of_buffer(child_index);
+                num_items_to_push = high - low;
+            }
+
             int space_in_child_buffer = child.max_buffer_size() - child.num_items_in_buffer();
 
             if (num_items_to_push > space_in_child_buffer) {
@@ -452,9 +607,9 @@ private:
                             );
                     child.add_to_buffer(items_to_push);
                 }
-                m_dirty_bids.add(child.get_bid());
+                m_dirty_bids.insert(child.get_bid());
                 // Flush child buffer.
-                if (curr_depth == m_depth - 1)
+                if (curr_depth == m_depth - 2)
                     flush_bottom_buffer(child);
                 else
                     flush_buffer(child, curr_depth+1);
@@ -470,12 +625,12 @@ private:
                     );
                     child.add_to_buffer(items_to_push);
                 }
-                m_dirty_bids.add(child.get_bid());
+                m_dirty_bids.insert(child.get_bid());
 
             } else {
                 std::vector<value_type> items_to_push = curr_node.get_buffer_items(low, high);
                 child.add_to_buffer(items_to_push);
-                m_dirty_bids.add(child.get_bid());
+                m_dirty_bids.insert(child.get_bid());
             }
 
             child_index++;
@@ -483,7 +638,7 @@ private:
             num_children = curr_node.num_children();
         }
         curr_node.clear_buffer();
-        m_dirty_bids.add(curr_node.get_bid());
+        m_dirty_bids.insert(curr_node.get_bid());
     }
 
     // See flush_buffer
@@ -494,21 +649,29 @@ private:
         int child_index = 0;
 
         while (child_index < num_children) {
-            leaf_type& child = *m_leaf_id_to_leaf.find(curr_node.get_child_id(child_index));
-            load(child);
-
             low = high;
             high = curr_node.index_of_upper_bound_of_buffer(child_index);
 
             int num_items_to_push = high - low;
+
+            if (num_items_to_push == 0) {
+                child_index++;
+                continue;
+            }
+
+            auto it = m_leaf_id_to_leaf.find(curr_node.get_child_id(child_index));
+            assert(it != m_leaf_id_to_leaf.end());
+            leaf_type& child = *(it->second);
+            load(child);
+
             // If pushing the items to the child would lead to an overflow ...
-            if (child.num_buffer_items() + num_items_to_push > child.max_buffer_size())
-                split(curr_node, child, low, high);
+            if (child.num_items_in_buffer() + num_items_to_push > child.max_buffer_size())
+                split_and_flush(curr_node, child, low, high);
             // Else: just push down
             else {
                 std::vector<value_type> buffer_items_to_push_down = curr_node.get_buffer_items(low, high);
                 child.add_to_buffer(buffer_items_to_push_down);
-                m_dirty_bids.add(child.get_bid());
+                m_dirty_bids.insert(child.get_bid());
             }
 
             child_index++;
@@ -516,10 +679,10 @@ private:
             num_children = curr_node.num_children();
         }
         curr_node.clear_buffer();
-        m_dirty_bids.add(curr_node.get_bid());
+        m_dirty_bids.insert(curr_node.get_bid());
     }
 
-    std::pair<data_type, bool> recursive_find(const node_type& curr_node, const key_type& key, int curr_depth) const {
+    std::pair<data_type, bool> recursive_find(node_type& curr_node, key_type& key, int curr_depth) {
         /*
          * Pseudocode of function:
          *
@@ -545,7 +708,7 @@ private:
         // Case: currently only have root
         if (m_depth == 1) {
             assert(curr_node == m_root);
-            return std::pair<data_type, bool> (dummy_datum, false);
+            return std::pair<data_type, bool> (dummy_datum(), false);
         }
 
         // Search in values
@@ -561,14 +724,18 @@ private:
         int child_id = maybe_datum_and_child_and_found_in_values.first.second;
 
         // Child is leaf
-        if (curr_depth == m_depth - 1)
-            return leaf_find(*m_leaf_id_to_leaf.at(child_id), key);
+        if (curr_depth == m_depth - 1) {
+            auto it = m_leaf_id_to_leaf.find(child_id);
+            assert(it != m_leaf_id_to_leaf.end());
+            leaf_type& child = *(it->second);
+            return leaf_find(child, key);
+        }
         // Child is inner node
         else
             return recursive_find(*m_node_id_to_node.at(child_id), key, curr_depth+1);
     }
 
-    std::pair<data_type, bool> leaf_find(leaf_type& curr_leaf, const key_type& key) const {
+    std::pair<data_type, bool> leaf_find(leaf_type& curr_leaf, key_type& key) {
         load(curr_leaf);
 
         // Search in buffer
@@ -577,7 +744,7 @@ private:
         if (maybe_datum_and_found_in_buffer.second)
             return maybe_datum_and_found_in_buffer;
         else
-            return std::pair<data_type, bool> (dummy_datum, false);
+            return std::pair<data_type, bool> (dummy_datum(), false);
     }
 
 };

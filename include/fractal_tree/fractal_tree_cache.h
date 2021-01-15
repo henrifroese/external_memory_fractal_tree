@@ -11,6 +11,11 @@
 #include <unordered_set>
 #include <foxxll/io/request_operations.hpp>
 
+namespace stxxl {
+
+namespace fractal_tree {
+
+
 template<typename BlockType, typename BidType, typename BidHash, unsigned NumBlocksInCache>
 class fractal_tree_cache {
 
@@ -136,6 +141,8 @@ public:
 
 };
 
+}
 
+}
 
 #endif //EXTERNAL_MEMORY_FRACTAL_TREE_FRACTAL_TREE_CACHE_H
