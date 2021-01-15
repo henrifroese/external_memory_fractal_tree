@@ -216,18 +216,50 @@ TEST_F(TestFractalTree, test_fractal_tree_visualize) {
     }
 }
 
-TEST_F(TestFractalTree, test_fractal_tree_insert_many) {
+TEST_F(TestFractalTree, test_fractal_tree_insert_512kb) {
     stxxl::ftree<int, int, 4096, 8*4096> f;
-    // Cache size is 4kb;
-    // one key-datum pair is 8 bytes
-    for (int i=0; i<(4096/8) * 100; i++)
+    // Cache size is 4 kb;
+    // one key-datum pair is 8 bytes.
+    // Insert 512 kb.
+    for (int i=0; i<512*1024/8; i++)
         f.insert(value_type(i, 2*i));
 
     std::cout << f.depth() << "     " << f.num_nodes() << "     " << f.num_leaves() << std::endl;
 
     // Check inserted values are found
-    for (int i=0; i<(4096/8) * 100; i++) {
-        std::cout << i << std::endl;
+    for (int i=0; i<512*1024/8; i++) {
+        ASSERT_TRUE(f.find(i).second);
+        ASSERT_EQ(f.find(i).first, 2*i);
+    }
+}
+
+TEST_F(TestFractalTree, test_fractal_tree_insert_1mb) {
+    stxxl::ftree<int, int, 4096, 8*4096> f;
+    // Cache size is 4 kb;
+    // one key-datum pair is 8 bytes.
+    // Insert 1 mb.
+    for (int i=0; i<1024*1024/8; i++)
+        f.insert(value_type(i, 2*i));
+
+    // Check inserted values are found
+    for (int i=0; i<1024*1024/8; i++) {
+        ASSERT_TRUE(f.find(i).second);
+        ASSERT_EQ(f.find(i).first, 2*i);
+    }
+}
+
+TEST_F(TestFractalTree, test_fractal_tree_insert_4mb) {
+    stxxl::ftree<int, int, 4096, 2*1024*1024> f;
+    // Cache size is 4 mb;
+    // one key-datum pair is 8 bytes.
+    // Insert 32 mb.
+    for (int i=0; i<4*1024*1024/8; i++)
+        f.insert(value_type(i, 2*i));
+
+    std::cout << f.depth() << "     " << f.num_nodes() << "     " << f.num_leaves() << std::endl;
+
+    // Check inserted values are found
+    for (int i=0; i<4*1024*1024/8; i++) {
         ASSERT_TRUE(f.find(i).second);
         ASSERT_EQ(f.find(i).first, 2*i);
     }
