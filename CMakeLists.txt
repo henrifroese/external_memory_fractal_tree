@@ -17,8 +17,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_subdirectory(extlibs/googletest)
 add_subdirectory(tests)
 
+# benchmark
+add_subdirectory(extlibs/benchmark)
+
+add_executable(benchmark-example benchmarks/benchmark_example.cpp)
+target_link_libraries(benchmark-example benchmark::benchmark)
+
 # executables
 add_executable(run-fractal-tree run-fractal-tree.cpp include/fractal_tree/fractal_tree_cache.h)
 
 target_link_libraries(run-fractal-tree ${STXXL_LIBRARIES})
-
