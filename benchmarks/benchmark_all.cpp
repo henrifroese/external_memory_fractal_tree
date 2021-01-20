@@ -47,21 +47,20 @@ public:
     };
 
 private:
-    const std::string dir;
     const std::string operation;
     const int cachesize;
     const std::string strategy;
     std::vector<experiment> experiments;
 public:
-    tree_benchmark(std::string dir_, std::string operation_, int cachesize_, std::string strategy_)
-            : dir(std::move(dir_)), operation(std::move(operation_)), cachesize(cachesize_), strategy(std::move(strategy_)) {};
+    tree_benchmark(std::string operation_, int cachesize_, std::string strategy_)
+            : operation(std::move(operation_)), cachesize(cachesize_), strategy(std::move(strategy_)) {};
 
     void add_experiment(const int N, const double BTREE_SECONDS, const int BTREE_READS, const int BTREE_WRITES, const double FTREE_SECONDS, const int FTREE_READS, const int FTREE_WRITES) {
         experiments.push_back(experiment {N, BTREE_WRITES, BTREE_READS, FTREE_WRITES, FTREE_READS, BTREE_SECONDS, FTREE_SECONDS });
     }
 
     void to_csv() {
-        std::string filename = dir + "/" + "benchmark_" + operation + "_" + "cachesize" + std::to_string(cachesize) + "_" + "strategy" + strategy + ".csv";
+        std::string filename = "./benchmark_" + operation + "_" + "cachesize" + std::to_string(cachesize) + "_" + "strategy" + strategy + ".csv";
         std::cout << "Exporting to: " << filename << std::endl;
         std::ofstream file;
         file.open(filename);
@@ -210,10 +209,10 @@ std::tuple<double, int, int> benchmark_btree_search(std::vector<value_type> valu
 
 void benchmark_1() {
     constexpr unsigned int cachesize = 8 * 4096;
-    tree_benchmark b = tree_benchmark("/home/henri/Desktop", "insert", cachesize, "sequential");
+    tree_benchmark b = tree_benchmark("insert", cachesize, "sequential");
 
-    // Have 32kB cache. Insert 32kB to 4 mB
-    for (int N=8 * 4096; N <= 1024 * 4096; N = 2*N) {
+    // Have 32kB cache. Insert 32kB to 32 mB
+    for (int N=8 * 4096; N <= 32 * 1024 * 1024; N = 2*N) {
         // do experiment, get writes and reads for btree and ftree.
         int values_to_insert = N / sizeof(value_type);
         std::vector<value_type> to_insert {};
@@ -242,10 +241,10 @@ void benchmark_1() {
 
 void benchmark_2() {
     constexpr unsigned int cachesize = 8 * 4096;
-    tree_benchmark b = tree_benchmark("/home/henri/Desktop", "insert", cachesize, "random");
+    tree_benchmark b = tree_benchmark("insert", cachesize, "random");
 
-    // Have 32kB cache. Insert 32kB to 4 mB
-    for (int N=8 * 4096; N <= 1024 * 4096; N = 2*N) {
+    // Have 32kB cache. Insert 32kB to 32 mB
+    for (int N=8 * 4096; N <= 32 * 1024 * 1024; N = 2*N) {
         int values_to_insert = N / sizeof(value_type);
         // do experiment, get writes and reads for btree and ftree.
         std::vector<value_type> to_insert {};
@@ -276,10 +275,10 @@ void benchmark_2() {
 
 void benchmark_3() {
     constexpr unsigned int cachesize = 8 * 4096;
-    tree_benchmark b = tree_benchmark("/home/henri/Desktop", "search", cachesize, "sequential");
+    tree_benchmark b = tree_benchmark("search", cachesize, "sequential");
 
-    // Have 32kB cache. Insert 32kB to 4 mB
-    for (int N=8 * 4096; N <= 1024 * 4096; N = 2*N) {
+    // Have 32kB cache. Insert 32kB to 32 mB
+    for (int N=8 * 4096; N <= 32 * 1024 * 1024; N = 2*N) {
         // do experiment, get writes and reads for btree and ftree.
         int values_to_insert = N / sizeof(value_type);
         std::vector<value_type> to_insert {};
@@ -308,10 +307,10 @@ void benchmark_3() {
 
 void benchmark_4() {
     constexpr unsigned int cachesize = 8 * 4096;
-    tree_benchmark b = tree_benchmark("/home/henri/Desktop", "search", cachesize, "random");
+    tree_benchmark b = tree_benchmark("search", cachesize, "random2");
 
-    // Have 32kB cache. Insert 32kB to 4 mB
-    for (int N=8 * 4096; N <= 1024 * 4096; N = 2*N) {
+    // Have 32kB cache. Insert 32kB to 32 mB
+    for (int N=8 * 4096; N <= 32 * 1024 * 1024; N = 2*N) {
         // do experiment, get writes and reads for btree and ftree.
         int values_to_insert = N / sizeof(value_type);
         std::vector<value_type> to_insert {};
