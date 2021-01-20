@@ -33,6 +33,7 @@ public:
     }
 };
 
+// Helper class for benchmarking.
 class tree_benchmark {
 public:
     struct experiment {
@@ -98,14 +99,14 @@ struct ComparatorGreater
     { return std::numeric_limits<int>::min(); }
 };
 
+// ---------------- Helper functions for the benchmarks ----------------------
 
 template<unsigned CacheSize>
 std::tuple<double, int, int> benchmark_ftree_insert(std::vector<value_type> values_to_insert) {
     constexpr unsigned RawMemoryPoolSize = CacheSize;
 
     using ftree_type = stxxl::ftree<key_type, data_type, RawBlockSize, RawMemoryPoolSize>;
-
-    stxxl::ftree<int, int, RawBlockSize, RawMemoryPoolSize> f;
+    ftree_type f;
 
     foxxll_timer custom_timer("FTREE");
 
@@ -136,7 +137,6 @@ std::tuple<double, int, int> benchmark_btree_insert(std::vector<value_type> valu
     // constructor map(node_cache_size_in_bytes, leaf_cache_size_in_bytes) to create map object named my_map
     btree_type b(RawMemoryPoolSize/2, RawMemoryPoolSize/2);
 
-
     foxxll_timer custom_timer("BTREE");
 
     for (auto val : values_to_insert)
@@ -153,8 +153,7 @@ std::tuple<double, int, int> benchmark_ftree_search(std::vector<value_type> valu
     constexpr unsigned RawMemoryPoolSize = CacheSize;
 
     using ftree_type = stxxl::ftree<key_type, data_type, RawBlockSize, RawMemoryPoolSize>;
-
-    stxxl::ftree<int, int, RawBlockSize, RawMemoryPoolSize> f;
+    ftree_type f;
 
     for (auto val : values_to_insert_and_search)
         f.insert(val);
@@ -186,10 +185,19 @@ std::tuple<double, int, int> benchmark_btree_search(std::vector<value_type> valu
     for (auto val : values_to_insert_and_search)
         b.insert(val);
 
+
+
     foxxll_timer custom_timer("BTREE");
 
-    for (auto val : values_to_insert_and_search)
-        b.find(val.first);
+    // Want to force the b-tree to use the const-qualified
+    // version of the overloaded find function to prevent
+    // unnecessary writes.
+    // See https://stackoverflow.com/questions/27315451/
+    const auto* b_const = &b;
+
+    for (auto val : values_to_insert_and_search) {
+        btree_type::const_iterator x = b_const->find(val.first);
+    }
 
     foxxll::stats_data stats_data = custom_timer.get_data();
     custom_timer.show_data();
@@ -316,6 +324,7 @@ void benchmark_4() {
 
         std::tuple<double, int, int> seconds_reads_writes_ftree = benchmark_ftree_search<cachesize>(to_insert);
         std::tuple<double, int, int> seconds_reads_writes_btree = benchmark_btree_search<cachesize>(to_insert);
+
         // add experiment to benchmark object.
         b.add_experiment(N,
                          std::get<0>(seconds_reads_writes_btree),
@@ -330,72 +339,12 @@ void benchmark_4() {
     b.to_csv();
 }
 
-// Random insertion test bigger stuff
-
-template<unsigned long long int CacheSize>
-std::tuple<double, int, int> benchmark_ftree_insert2(unsigned long long int N) {
-
-    unsigned long long int num_insertions = N / (sizeof(unsigned long long int) + sizeof(unsigned int));
-    std::cout << "Inserting "  << num_insertions << " values. In GB: " << N / 1024 / 1024 / 1024 << std::endl;
-    constexpr unsigned long long int RawMemoryPoolSize = CacheSize;
-
-    using ftree_type = stxxl::ftree<unsigned long long int, unsigned int, RawBlockSize, RawMemoryPoolSize>;
-    ftree_type f;
-
-    std::random_device rd; // obtain a random number from hardware
-    std::mt19937 gen(rd()); // seed the generator
-    std::uniform_int_distribution<unsigned long long int> d(0, 10*num_insertions); // define the range
-
-    foxxll_timer custom_timer("FTREE");
-
-    for (unsigned long long int i = 0; i < num_insertions; i++) {
-        if (i % 1000000 == 0) {
-            std::cout << i << std::endl;
-        }
-        f.insert(std::pair<unsigned  long long int, unsigned int> (d(gen), 0));
-    }
-
-    foxxll::stats_data stats_data = custom_timer.get_data();
-    custom_timer.show_data();
-
-    return std::tuple<double, int, int> { stats_data.get_elapsed_time(), stats_data.get_read_count(), stats_data.get_write_count() };
-
-}
-
-void benchmark_test() {
-    // 4 GB cache
-    constexpr unsigned long long int cachesize = 0x100000000;
-    tree_benchmark b = tree_benchmark("/home/henri/Desktop", "insert", cachesize, "random");
-
-    // Have 4 GB cache. Insert 6 GB
-    for (unsigned long long int N=0x180000000; N <= 0x180000000; N = 2*N) {
-        // do experiment, get writes and reads for btree and ftree.
-
-        std::tuple<double, int, int> seconds_reads_writes_ftree = benchmark_ftree_insert2<cachesize>(N);
-        /*
-        std::tuple<double, int, int> seconds_reads_writes_btree = benchmark_ftree_insert2<cachesize>(N);
-        // add experiment to benchmark object.
-        b.add_experiment(N,
-                         std::get<0>(seconds_reads_writes_btree),
-                         std::get<1>(seconds_reads_writes_btree),
-                         std::get<2>(seconds_reads_writes_btree),
-                         std::get<0>(seconds_reads_writes_ftree),
-                         std::get<1>(seconds_reads_writes_ftree),
-                         std::get<2>(seconds_reads_writes_ftree));
-        */
-    }
-
-    // export to csv.
-    //b.to_csv();
-}
-
 
 int main() {
-    //benchmark_1();
-    //benchmark_2();
-    //benchmark_3();
-    //benchmark_4();
-    benchmark_test();
+    benchmark_1();
+    benchmark_2();
+    benchmark_3();
+    benchmark_4();
 
     return 0;
 }
