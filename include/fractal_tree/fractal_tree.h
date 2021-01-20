@@ -236,8 +236,9 @@ public:
                         std::cout << val.first << ", ";
                     std::cout << " | ";
                     if (!n.buffer_empty()) {
-                        std::cout << n.get_buffer_items().at(0).first << " ... ";
-                        std::cout << n.get_buffer_items().at(n.num_items_in_buffer()-1).first;
+                        std::vector<value_type> buffer_items = n.get_buffer_items();
+                        std::cout << std::min_element(buffer_items.begin(), buffer_items.end())->first << " ... ";
+                        std::cout << std::max_element(buffer_items.begin(), buffer_items.end())->first;
                     }
                     std::cout << " ]    ";
 
@@ -256,8 +257,9 @@ public:
 
                     // Pretty-print first and last buffer item
                     std::cout << "[ ";
-                    std::cout << n.get_buffer_items().at(0).first << " ... ";
-                    std::cout << n.get_buffer_items().at(n.num_items_in_buffer()-1).first;
+                    std::vector<value_type> buffer_items = n.get_buffer_items();
+                    std::cout << std::min_element(buffer_items.begin(), buffer_items.end())->first << " ... ";
+                    std::cout << std::max_element(buffer_items.begin(), buffer_items.end())->first;
                     std::cout << " ]    ";
                 }
                 std::cout << std::endl;
@@ -413,6 +415,8 @@ private:
          * mid item is promoted to
          *
          */
+        load(parent_node);
+        load(left_child);
         // Combine the sorted buffer items, and take from the parent
         // in case of duplicates.
         std::vector<value_type> combined_values = merge_into<value_type>(
@@ -460,9 +464,10 @@ private:
          * 4. Promote mid item to value of parent nodes;
          *    set child ids
         */
+        load(parent_node);
+        load(left_child);
         // Gather buffer items / values / nodeIDs to distribute to the children
         int values_mid = (left_child.num_values() - 1) / 2;
-        int nodeIDs_mid = left_child.num_values() / 2;
 
         std::vector<value_type> values_for_left_child = left_child.get_values(
                 0, values_mid
@@ -471,10 +476,10 @@ private:
                 values_mid + 1, left_child.num_values()
                 );
         std::vector<int> nodeIDs_for_left_child = left_child.get_nodeIDs(
-                0, nodeIDs_mid
+                0, values_mid + 1
                 );
         std::vector<int> nodeIDs_for_right_child = left_child.get_nodeIDs(
-                nodeIDs_mid, left_child.num_values() + 1
+                values_mid + 1, left_child.num_values() + 1
         );
 
         value_type mid_value = left_child.get_value(values_mid);
@@ -583,12 +588,15 @@ private:
             assert(it != m_node_id_to_node.end());
             node_type& child = *(it->second);
             load(child);
+            load(curr_node);
 
             if (child.values_at_least_half_full()) {
                 split(curr_node, child);
                 // After splitting, the child is now responsible
                 // for a different range of values, so we have to
                 // re-calculate what should be pushed down.
+                load(curr_node);
+                load(child);
                 high = curr_node.index_of_upper_bound_of_buffer(child_index);
                 num_items_to_push = high - low;
             }
@@ -663,6 +671,7 @@ private:
             assert(it != m_leaf_id_to_leaf.end());
             leaf_type& child = *(it->second);
             load(child);
+            load(curr_node);
 
             // If pushing the items to the child would lead to an overflow ...
             if (child.num_items_in_buffer() + num_items_to_push > child.max_buffer_size())
@@ -673,6 +682,7 @@ private:
                 child.add_to_buffer(buffer_items_to_push_down);
                 m_dirty_bids.insert(child.get_bid());
             }
+            load(curr_node);
 
             child_index++;
             // num_children can change due to splitting

@@ -23,6 +23,9 @@ add_subdirectory(extlibs/benchmark)
 add_executable(benchmark-example benchmarks/benchmark_example.cpp)
 target_link_libraries(benchmark-example benchmark::benchmark)
 
+add_executable(benchmark-all benchmarks/benchmark_all.cpp)
+target_link_libraries(benchmark-all ${STXXL_LIBRARIES})
+
 # executables
 add_executable(run-fractal-tree run-fractal-tree.cpp include/fractal_tree/fractal_tree_cache.h)
 

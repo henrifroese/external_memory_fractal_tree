@@ -556,6 +556,8 @@ public:
         }
 
     }
+
+    int get_id() { return m_id; }
 };
 
 template<typename KeyType,
