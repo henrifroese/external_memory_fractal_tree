@@ -203,6 +203,69 @@ std::tuple<double, int, int> benchmark_btree_search(std::vector<value_type> valu
 
     return std::tuple<double, int, int> { stats_data.get_elapsed_time(), stats_data.get_read_count(), stats_data.get_write_count() };
 }
+
+
+template<unsigned CacheSize>
+std::tuple<double, int, int> benchmark_ftree_rangesearch(std::vector<value_type> values_to_insert_and_search) {
+    constexpr unsigned RawMemoryPoolSize = CacheSize;
+
+    using ftree_type = stxxl::ftree<key_type, data_type, RawBlockSize, RawMemoryPoolSize>;
+    ftree_type f;
+
+    for (auto val : values_to_insert_and_search)
+        f.insert(val);
+
+    foxxll_timer custom_timer("FTREE");
+
+    f.range_search(0, values_to_insert_and_search.size()-1);
+
+    foxxll::stats_data stats_data = custom_timer.get_data();
+    custom_timer.show_data();
+
+
+    return std::tuple<double, int, int> { stats_data.get_elapsed_time(), stats_data.get_read_count(), stats_data.get_write_count() };
+
+}
+
+template<unsigned CacheSize>
+std::tuple<double, int, int> benchmark_btree_rangesearch(std::vector<value_type> values_to_insert_and_search) {
+
+    constexpr unsigned RawMemoryPoolSize = CacheSize;
+
+    // template parameter <KeyType, DataType, CompareType, RawNodeSize, RawLeafSize, PDAllocStrategy (optional)>
+    using btree_type = stxxl::map<key_type, data_type , ComparatorGreater, RawBlockSize, RawBlockSize>;
+    // constructor map(node_cache_size_in_bytes, leaf_cache_size_in_bytes) to create map object named my_map
+    btree_type b(RawMemoryPoolSize/2, RawMemoryPoolSize/2);
+
+    for (auto val : values_to_insert_and_search)
+        b.insert(val);
+
+    // Want to force the b-tree to use the const-qualified
+    // version of the overloaded find function to prevent
+    // unnecessary writes.
+    // See https://stackoverflow.com/questions/27315451/
+    const auto* b_const = &b;
+
+    foxxll_timer custom_timer("BTREE");
+
+    // b-tree does not have actual range-search directly,
+    // so we use lower bound and then walk
+    // along.
+    btree_type::const_iterator lower = b_const->lower_bound(0);
+    btree_type::const_iterator upper = b_const->upper_bound(values_to_insert_and_search.size()-1);
+
+    while (lower != upper) {
+        lower--;
+    }
+
+    foxxll::stats_data stats_data = custom_timer.get_data();
+    custom_timer.show_data();
+
+    return std::tuple<double, int, int> { stats_data.get_elapsed_time(), stats_data.get_read_count(), stats_data.get_write_count() };
+}
+
+
+
 // ------------------------- BENCHMARKS -------------------------
 
 // Benchmark 1: sequential insertion
@@ -339,11 +402,48 @@ void benchmark_4() {
 }
 
 
+// Benchmark 5: range-search
+
+void benchmark_5() {
+    constexpr unsigned int cachesize = 8 * 4096;
+    tree_benchmark b = tree_benchmark("rangesearch", cachesize, "full");
+
+    // Have 32kB cache. Insert 32kB to 32 mB
+    for (int N=8 * 4096; N <= 32 * 1024 * 1024; N = 2*N) {
+        // do experiment, get writes and reads for btree and ftree.
+        int values_to_insert = N / sizeof(value_type);
+        std::vector<value_type> to_insert {};
+        to_insert.reserve(values_to_insert);
+        for (int i=0; i<values_to_insert; i++)
+            to_insert.emplace_back(i,i);
+
+        auto rng = std::default_random_engine { 42 };
+        std::shuffle(std::begin(to_insert), std::end(to_insert), rng);
+
+        std::tuple<double, int, int> seconds_reads_writes_ftree = benchmark_ftree_rangesearch<cachesize>(to_insert);
+        std::tuple<double, int, int> seconds_reads_writes_btree = benchmark_btree_rangesearch<cachesize>(to_insert);
+
+        // add experiment to benchmark object.
+        b.add_experiment(N,
+                         std::get<0>(seconds_reads_writes_btree),
+                         std::get<1>(seconds_reads_writes_btree),
+                         std::get<2>(seconds_reads_writes_btree),
+                         std::get<0>(seconds_reads_writes_ftree),
+                         std::get<1>(seconds_reads_writes_ftree),
+                         std::get<2>(seconds_reads_writes_ftree));
+    }
+
+    // export to csv.
+    b.to_csv();
+}
+
+
 int main() {
-    benchmark_1();
-    benchmark_2();
+    //benchmark_1();
+    //benchmark_2();
     benchmark_3();
-    benchmark_4();
+    //benchmark_4();
+    //benchmark_5();
 
     return 0;
 }

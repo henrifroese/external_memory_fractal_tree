@@ -3,6 +3,8 @@
 //
 #include <gtest/gtest.h>
 #include "../include/fractal_tree/fractal_tree.h"
+#include <random>
+#include <algorithm>
 
 using key_type = int;
 using data_type = int;
@@ -263,4 +265,69 @@ TEST_F(TestFractalTree, test_fractal_tree_insert_4mb) {
         ASSERT_TRUE(f.find(i).second);
         ASSERT_EQ(f.find(i).first, 2*i);
     }
+}
+
+
+TEST_F(TestFractalTree, test_fractal_tree_range_search) {
+    stxxl::ftree<int, int, 4096, 2*1024*1024> f;
+
+    int values_to_insert = 4*1024*1024/8;
+    std::vector<value_type> to_insert {};
+    to_insert.reserve(values_to_insert);
+    for (int i=0; i<values_to_insert; i++)
+        to_insert.emplace_back(i,i);
+
+    auto rng = std::default_random_engine { 42 };
+    std::shuffle(std::begin(to_insert), std::end(to_insert), rng);
+
+    for (auto val : to_insert)
+        f.insert(val);
+
+    std::vector<value_type> v = f.range_search(0, 100);
+    std::vector<value_type> w {};
+    for (int i=0; i<= 100; i++)
+        w.emplace_back(i, i);
+    ASSERT_TRUE(v.size() == w.size());
+    for (int i=0; i<v.size(); i++) {
+        ASSERT_TRUE(v[i] == w[i]);
+    }
+
+    v = f.range_search(0, 100000);
+    w.clear();
+    for (int i=0; i<= 100000; i++)
+        w.emplace_back(i, i);
+    ASSERT_TRUE(v.size() == w.size());
+    for (int i=0; i<v.size(); i++) {
+        ASSERT_TRUE(v[i] == w[i]);
+    }
+
+    v = f.range_search(100000, 10000001);
+    w.clear();
+    for (int i=std::min(100000, values_to_insert-1); i<=std::min(10000001, values_to_insert-1); i++)
+        w.emplace_back(i, i);
+    ASSERT_EQ(v.size(), w.size());
+    for (int i=0; i<v.size(); i++) {
+        ASSERT_TRUE(v[i] == w[i]);
+    }
+
+    v = f.range_search(123456, 524123);
+    w.clear();
+    for (int i=std::min(123456, values_to_insert-1); i<=std::min(524123, values_to_insert-1); i++)
+        w.emplace_back(i, i);
+    ASSERT_TRUE(v.size() == w.size());
+    for (int i=0; i<v.size(); i++) {
+        ASSERT_TRUE(v[i] == w[i]);
+    }
+
+
+    v = f.range_search(-100, -1);
+    ASSERT_TRUE(v.empty());
+
+    v = f.range_search(values_to_insert, values_to_insert + 100);
+    ASSERT_TRUE(v.empty());
+
+    v = f.range_search(-100, 0);
+    ASSERT_TRUE(v.size() == 1);
+    ASSERT_TRUE(v[0] == value_type(0,0));
+
 }

@@ -206,6 +206,16 @@ public:
         return m_curr_leaf_id;
     }
 
+    std::vector<value_type> range_search(key_type lower, key_type upper) {
+        std::vector<value_type> result {};
+        // Guess
+        result.reserve(max_num_buffer_items_in_leaf * 10);
+
+        recursive_range_find(m_root, lower, upper, 1, result);
+
+        return result;
+    }
+
     void visualize() {
         if (num_nodes() > 30) {
             std::cout << "Tree is too large to visualize" << std::endl;
@@ -691,6 +701,73 @@ private:
         curr_node.clear_buffer();
         m_dirty_bids.insert(curr_node.get_bid());
     }
+
+    void recursive_range_find(node_type& curr_node, key_type& lower, key_type& upper, int curr_depth, std::vector<value_type>& result) {
+        if (!curr_node.buffer_empty()) {
+            if (curr_depth == m_depth - 1) {
+                flush_bottom_buffer(curr_node);
+            } else {
+                flush_buffer(curr_node, curr_depth);
+            }
+            load(curr_node);
+        }
+
+        std::vector<value_type> values = curr_node.get_values();
+        std::vector<int> nodeIDs = curr_node.get_nodeIDs(0, curr_node.num_children());
+
+        bool next_level_is_leaf = curr_depth == m_depth - 1;
+
+        for (int i=0; i < values.size(); i++) {
+            // Look at i-th value and descendants
+            if (values[i].first == lower) {
+                result.push_back(values[i]);
+            }
+
+            if ((values[i].first > lower) && (values[i].first <= upper)) {
+                if (next_level_is_leaf)
+                    recursive_range_find_leaf(*m_leaf_id_to_leaf.at(nodeIDs[i]), lower, upper, result);
+                else
+                    recursive_range_find(*m_node_id_to_node.at(nodeIDs[i]), lower, upper, curr_depth+1, result);
+
+                result.push_back(values[i]);
+            }
+
+            if (values[i].first > upper) {
+                if (next_level_is_leaf)
+                    recursive_range_find_leaf(*m_leaf_id_to_leaf.at(nodeIDs[i]), lower, upper, result);
+                else
+                    recursive_range_find(*m_node_id_to_node.at(nodeIDs[i]), lower, upper, curr_depth+1, result);
+
+                break;
+            }
+
+        }
+        // Potentially look at last child
+        if (values[values.size()-1].first < upper) {
+            if (next_level_is_leaf)
+                recursive_range_find_leaf(*m_leaf_id_to_leaf.at(nodeIDs[nodeIDs.size()-1]), lower, upper, result);
+            else
+                recursive_range_find(*m_node_id_to_node.at(nodeIDs[nodeIDs.size()-1]), lower, upper, curr_depth+1, result);
+        }
+    }
+
+    void recursive_range_find_leaf(leaf_type& curr_leaf, key_type& lower, key_type& upper, std::vector<value_type>& result) {
+        load(curr_leaf);
+        std::vector<value_type> buffer_items = curr_leaf.get_buffer_items();
+
+        if (buffer_items[0].first > upper)
+            return;
+
+        auto lower_it = std::lower_bound(buffer_items.begin(), buffer_items.end(), value_type(lower, dummy_datum()),
+                                         [](const value_type& val1, const value_type& val2)->bool {return val1.first < val2.first;});
+        auto upper_it = std::lower_bound(buffer_items.begin(), buffer_items.end(), value_type(upper, dummy_datum()),
+                                         [](const value_type& val1, const value_type& val2)->bool {return val1.first < val2.first;});
+        if (upper_it != buffer_items.end())
+            upper_it++;
+
+        result.insert(result.end(), lower_it, upper_it);
+    }
+
 
     std::pair<data_type, bool> recursive_find(node_type& curr_node, key_type& key, int curr_depth) {
         /*
