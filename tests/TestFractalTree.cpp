@@ -283,7 +283,7 @@ TEST_F(TestFractalTree, test_fractal_tree_range_search) {
     for (auto val : to_insert)
         f.insert(val);
 
-    std::vector<value_type> v = f.range_search(0, 100);
+    std::vector<value_type> v = f.range_find(0, 100);
     std::vector<value_type> w {};
     for (int i=0; i<= 100; i++)
         w.emplace_back(i, i);
@@ -292,7 +292,7 @@ TEST_F(TestFractalTree, test_fractal_tree_range_search) {
         ASSERT_TRUE(v[i] == w[i]);
     }
 
-    v = f.range_search(0, 100000);
+    v = f.range_find(0, 100000);
     w.clear();
     for (int i=0; i<= 100000; i++)
         w.emplace_back(i, i);
@@ -301,7 +301,7 @@ TEST_F(TestFractalTree, test_fractal_tree_range_search) {
         ASSERT_TRUE(v[i] == w[i]);
     }
 
-    v = f.range_search(100000, 10000001);
+    v = f.range_find(100000, 10000001);
     w.clear();
     for (int i=std::min(100000, values_to_insert-1); i<=std::min(10000001, values_to_insert-1); i++)
         w.emplace_back(i, i);
@@ -310,7 +310,7 @@ TEST_F(TestFractalTree, test_fractal_tree_range_search) {
         ASSERT_TRUE(v[i] == w[i]);
     }
 
-    v = f.range_search(123456, 524123);
+    v = f.range_find(123456, 524123);
     w.clear();
     for (int i=std::min(123456, values_to_insert-1); i<=std::min(524123, values_to_insert-1); i++)
         w.emplace_back(i, i);
@@ -320,13 +320,13 @@ TEST_F(TestFractalTree, test_fractal_tree_range_search) {
     }
 
 
-    v = f.range_search(-100, -1);
+    v = f.range_find(-100, -1);
     ASSERT_TRUE(v.empty());
 
-    v = f.range_search(values_to_insert, values_to_insert + 100);
+    v = f.range_find(values_to_insert, values_to_insert + 100);
     ASSERT_TRUE(v.empty());
 
-    v = f.range_search(-100, 0);
+    v = f.range_find(-100, 0);
     ASSERT_TRUE(v.size() == 1);
     ASSERT_TRUE(v[0] == value_type(0,0));
 

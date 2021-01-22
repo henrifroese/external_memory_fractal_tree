@@ -201,15 +201,30 @@ public:
     int num_nodes() const {
         return m_curr_node_id;
     }
-    
+
     int num_leaves() const {
         return m_curr_leaf_id;
     }
 
-    std::vector<value_type> range_search(key_type lower, key_type upper) {
+    std::vector<value_type> range_find(key_type lower, key_type upper) {
         std::vector<value_type> result {};
         // Guess
         result.reserve(max_num_buffer_items_in_leaf * 10);
+
+        // Flush root buffer first
+        if (m_depth > 1) {
+            // Potentially split to keep "small-split invariant"
+            if (m_root.values_at_least_half_full())
+                split_root();
+            // Flush buffer
+            else {
+                if (m_depth == 2)
+                    flush_bottom_buffer(m_root);
+                else
+                    flush_buffer(m_root, 1);
+                assert(m_root.buffer_empty());
+            }
+        }
 
         recursive_range_find(m_root, lower, upper, 1, result);
 
@@ -233,7 +248,7 @@ public:
 
         while (curr_depth <= m_depth) {
             // Case: currently looking at inner nodes
-            if (curr_depth < m_depth) {
+            if ((curr_depth < m_depth) || (m_depth == 1)) {
                 std::vector<int> next_level_ids {};
 
                 for (auto id : level_ids) {
@@ -703,14 +718,13 @@ private:
     }
 
     void recursive_range_find(node_type& curr_node, key_type& lower, key_type& upper, int curr_depth, std::vector<value_type>& result) {
-        if (!curr_node.buffer_empty()) {
-            if (curr_depth == m_depth - 1) {
-                flush_bottom_buffer(curr_node);
-            } else {
-                flush_buffer(curr_node, curr_depth);
-            }
-            load(curr_node);
+        // Flush buffer
+        if (curr_depth == m_depth - 1) {
+            flush_bottom_buffer(curr_node);
+        } else {
+            flush_buffer(curr_node, curr_depth);
         }
+        load(curr_node);
 
         std::vector<value_type> values = curr_node.get_values();
         std::vector<int> nodeIDs = curr_node.get_nodeIDs(0, curr_node.num_children());
@@ -743,7 +757,7 @@ private:
 
         }
         // Potentially look at last child
-        if (values[values.size()-1].first < upper) {
+        if ((!values.empty()) && (values[values.size()-1].first < upper)) {
             if (next_level_is_leaf)
                 recursive_range_find_leaf(*m_leaf_id_to_leaf.at(nodeIDs[nodeIDs.size()-1]), lower, upper, result);
             else
