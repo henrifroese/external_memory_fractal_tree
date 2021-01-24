@@ -5,7 +5,6 @@
  *                    Hung Tran     <hung@ae.cs.uni-frankfurt.de>
  */
 
-#include <foxxll/mng/block_alloc_strategy.hpp>
 #include "include/fractal_tree/fractal_tree.h"
 
 
