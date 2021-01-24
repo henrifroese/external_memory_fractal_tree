@@ -29,7 +29,6 @@ Here are some results of measurements I ran (for details, see [the report](exter
 ## Example Usage
 See the [run-fractal-tree.cpp](run-fractal-tree.cpp) file:
 ```cpp
-#include <foxxll/mng/block_alloc_strategy.hpp>
 #include "include/fractal_tree/fractal_tree.h"
 
 
