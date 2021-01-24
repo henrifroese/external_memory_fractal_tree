@@ -22,15 +22,15 @@ namespace fractal_tree {
 // Merge sorted vectors new_values and current_values,
 // and take from new_values in case of duplicates.
 // Vectors need to be sorted by new_values.first
-template<typename value_type>
-std::vector<value_type> merge_into(const std::vector<value_type>& new_values, const std::vector<value_type>& current_values) {
+template<typename ValueType>
+std::vector<ValueType> merge_into(const std::vector<ValueType>& new_values, const std::vector<ValueType>& current_values) {
 
     if (new_values.empty())
         return current_values;
     if (current_values.empty())
         return new_values;
 
-    std::vector<value_type> result;
+    std::vector<ValueType> result;
     result.reserve(current_values.size() + new_values.size());
 
     auto it_new_values = new_values.begin();
@@ -90,38 +90,38 @@ double constexpr SQRT(double x)
 // Given the raw_block_size and the size that a struct with the
 // values and the nodeIDs (without buffer) would take (both in bytes),
 // calculate how many items of type value_type fit into the buffer.
-template<typename value_type, unsigned raw_block_size, unsigned size_without_buffer>
+template<typename ValueType, unsigned RawBlockSize, unsigned SizeWithoutBuffer>
 unsigned constexpr NUM_NODE_BUFFER_ITEMS() {
-    unsigned remaining_bytes_for_buffer = raw_block_size - size_without_buffer;
+    unsigned remaining_bytes_for_buffer = RawBlockSize - SizeWithoutBuffer;
     // The struct without the buffer contains an array of ints (the nodeIDs)
     // and an array of value_type (the values) -> it's already aligned to the
     // bigger of the two.
-    unsigned alignment = alignof(value_type) > alignof(int) ? alignof(value_type) : alignof(int);
+    unsigned alignment = alignof(ValueType) > alignof(int) ? alignof(ValueType) : alignof(int);
     // Want to use as many of the remaining bytes, but we can only fill multiples of
     // alignment -> find biggest multiple of alignment that's <= remaining bytes.
     unsigned max_fillable_bytes = remaining_bytes_for_buffer - (remaining_bytes_for_buffer % alignment);
 
-    unsigned max_num_items = max_fillable_bytes / sizeof(value_type);
+    unsigned max_num_items = max_fillable_bytes / sizeof(ValueType);
     return max_num_items;
 }
 
 // Set up sizes and types for the blocks used to store inner nodes' data in external memory.
-template<typename value_type, unsigned RawBlockSize>
+template<typename ValueType, unsigned RawBlockSize>
 class node_parameters final {
 public:
     enum {
         max_num_values_in_node =
         static_cast<int>(
-                SQRT(static_cast<double>(RawBlockSize / sizeof(value_type)))
+                SQRT(static_cast<double>(RawBlockSize / sizeof(ValueType)))
         )
     };
     struct _node_block_without_buffer {
-        std::array<value_type, max_num_values_in_node>       value {};
+        std::array<ValueType, max_num_values_in_node>       value {};
         std::array<int,        max_num_values_in_node+1>     nodeIDs {};
     };
 
     enum {
-        max_num_buffer_items_in_node = NUM_NODE_BUFFER_ITEMS<value_type, RawBlockSize, sizeof(_node_block_without_buffer)>(),
+        max_num_buffer_items_in_node = NUM_NODE_BUFFER_ITEMS<ValueType, RawBlockSize, sizeof(_node_block_without_buffer)>(),
     };
 };
 
