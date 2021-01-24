@@ -66,7 +66,11 @@ int main()
 }
 
 ```
-
+## Building & Using
+1. clone the repo
+2. cd into the repo
+3. run `git submodule init`
+4. run `git submodule update --init --recursive`
 
 ## Details
 More implementation details, an introduction to external memory trees, and benchmarks can be found [in this report](external_memory_fractal_tree_REPORT.pdf).
