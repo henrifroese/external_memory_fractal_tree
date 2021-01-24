@@ -11,16 +11,20 @@ compared to a B-Tree. Fractal Tree searches are a factor of 2 slower than B-Tree
 
 ## Performance
 With a Block Size of B, N items in the tree, and for range-search X items in the result, fractal trees
-and b-trees need the following number of _disk accesses_:
+and b-trees need the following number of _disk accesses_ (I/Os):
 
 | Tree Type  | Insertion  | Search  | Range-Search  |
 |---|---|---|---|
 | Fractal Tree  | ![\frac{1}{\sqrt{B}}\log_B (\frac{N}{B})](https://latex.codecogs.com/gif.latex?%5Cfrac%7B1%7D%7B%5Csqrt%7BB%7D%7D%5Clog_B%20%28%5Cfrac%7BN%7D%7BB%7D%29)  | ![2\log_B (\frac{N}{B})](https://latex.codecogs.com/gif.latex?2%5Clog_B%20%28%5Cfrac%7BN%7D%7BB%7D%29)  | ![2\log_B(\frac{N}{B}) + \frac{X}{B}](https://latex.codecogs.com/gif.latex?2%5Clog_B%28%5Cfrac%7BN%7D%7BB%7D%29%20&plus;%20%5Cfrac%7BX%7D%7BB%7D)  |
 | B-Tree  | ![\log_B(\frac{N}{B})](https://latex.codecogs.com/gif.latex?%5Clog_B%28%5Cfrac%7BN%7D%7BB%7D%29)  | ![\log_B(\frac{N}{B})](https://latex.codecogs.com/gif.latex?%5Clog_B%28%5Cfrac%7BN%7D%7BB%7D%29)  | ![\log_B(\frac{N}{B}) + \frac{X}{B}](https://latex.codecogs.com/gif.latex?%5Clog_B%28%5Cfrac%7BN%7D%7BB%7D%29%20&plus;%20%5Cfrac%7BX%7D%7BB%7D)  |
 
-Here are some results of measurements I ran:
+Here are some results of measurements I ran (for details, see [the report](external_memory_fractal_tree_REPORT.pdf)).:
 
-TODO
+<p float="left">
+  <img src="/benchmarks/Random_Search.png" width="32%" />
+  <img src="/benchmarks/Random_Insertion.png" width="32%" /> 
+  <img src="/benchmarks/Range Search (amortized over 5 queries).png" width="32%" />
+</p>
 
 ## Example Usage
 See the [run-fractal-tree.cpp](run-fractal-tree.cpp) file:
