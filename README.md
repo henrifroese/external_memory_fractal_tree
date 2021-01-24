@@ -3,7 +3,7 @@
 This repository houses the (header-only) implementation of an [external-memory fractal tree](https://en.wikipedia.org/wiki/Fractal_tree_index)
 using the C++ [STXXL library](https://stxxl.org/tags/master).
 
-A fractal tree is a tree data structure similar to a [B-Tree](https://en.wikipedia.org/wiki/B-tree). Each node occupies one block of memory of size B, and has up to sqrt(B) keys
+A fractal tree (a variant of the buffered repository tree) is a tree data structure similar to a [B-Tree](https://en.wikipedia.org/wiki/B-tree). Each node occupies one block of memory of size B, and has up to sqrt(B) keys
 that function just like those in a B-Tree. However, each node additionally fills its block up with up with a buffer of size
 B-sqrt(B). On insertion, new key-datum-pairs are quickly inserted into the root node buffer (and later pushed down to the buffers in the 
 next level when a buffer is full), speeding up insertions by a factor 1/sqrt(B)
